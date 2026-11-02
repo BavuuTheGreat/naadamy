@@ -49,7 +49,7 @@ public sealed partial class Game
         }
 
         public override float Width => 720;
-        public override bool CanEscape => true;
+        public override bool CanEscape => false;   // Esc or a tap outside would close it without ever calling after (a new player would skip making a character); Skip is the way out
         public override (string who, string face)? Speaker => ("bolormaa", "smile");
 
         public override void Tick(Game g, float dt)
