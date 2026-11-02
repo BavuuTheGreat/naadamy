@@ -266,3 +266,78 @@ Good to know before building on this:
 2. Bump `VERSION` in `web/js/village/rules.js`. The web and Unity clients warn when `welcome.v` doesn't match.
 3. Update this file.
 4. Run `node tests/multiplayer.mjs`.
+
+## Online arena
+
+Бөхийн өргөө, the online wrestling arena: wrestler accounts with unique usernames, friends, ranked matchmaking,
+challenges between friends, sparring with the CPU and leaderboards. Bouts are simulated on the server
+(`server/arena-sim.js`), 30 ticks a second; clients only send what they hold and press. Code: `server/accounts.js`
+(HTTP), `server/arena.js` (WebSocket), `server/arena-store.js` (storage), `server/arena-bot.js` (the CPU); Unity:
+`Arena.cs` (accounts, hub, friends, boards) and `ArenaFight.cs` (the bout).
+
+### Accounts: `POST /api/account`
+
+JSON, at most 4 KB, 30 requests a minute per address (`429 busy`). Every answer is `{ ok, … }` or `{ ok: false, reason }`.
+
+| `act` | Fields | Answer when `ok` |
+|---|---|---|
+| `check` | `username` | `{ ok, available, reason? }` (`invalid`, `mixed`, `reserved`, `taken`) |
+| `register` | `id, ticket, username, password` | `{ ok, username }`: the player `id` (its ticket checked like a room join) gets the account |
+| `login` | `username, password` | `{ ok, id, ticket, username, cloud }`: a new device ticket for the player, and its cloud save |
+| `me` | `id, ticket` | `{ ok, account: { username } \| null }` |
+| `rename` | `id, ticket, password, username` | `{ ok, username }`: the old name is free at once |
+| `password` | `id, ticket, password, next` | `{ ok }` |
+| `delete` | `id, ticket, password, confirm` | `{ ok }`: `confirm` is the username typed again |
+
+- **Usernames:** 3–16 of `A–Z a–z 0–9 _` or Cyrillic letters, not Latin and Cyrillic mixed in one name, not a reserved
+  word (`admin`, `naadamy`, `basar`, `cpu`…). Unique by a key: lower case, with Cyrillic letters that look like Latin ones
+  (а в е к м н о р с т у ү х…) read as Latin, so `BAT`, `bat` and Cyrillic `ВАТ` are one name. PostgreSQL enforces it
+  with a unique index, so two players taking one name at once can't both get it.
+- **Passwords:** 6–64 characters, not the username. Kept as a salted scrypt hash. 5 wrong tries lock the account for
+  15 minutes, doubling with each lock, at most 24 hours (`locked`, `wait` in seconds); a wrong try answers `wrong` with
+  `left`. `login` answers `wrong` for an unknown name too.
+- One account per player id (`has-account`). Other reasons: `invalid`, `identity` (a wrong ticket), `erased`,
+  `weak-password`, `no-account`, `confirm`, `storage`.
+- Deleting an account deletes its username, password, friendships and arena stats; its bouts stay in the record without
+  its id. The player's coins, XP and cloud save are not touched. Erasing a family deletes its children's accounts too.
+
+### Arena messages (WebSocket, after `welcome`)
+
+Send `ar-hello` first; it answers `ar-me` and, if the player is still in a bout (a dropped connection), `ar-start`
+with `resume: true`. Everything else answers `{ t: 'ar-err', reason: 'no-account' }` until the player has an account.
+
+| Client `t` | Fields | Answer |
+|---|---|---|
+| `ar-hello` | | `ar-me { u, rating, tier, w, l, d, streak, best, n, xp, lvl }`, or `{ u: null }` |
+| `fr-list` | | `fr-list { friends, inc, out }`: rows `{ u, look, rating, tier, w, l, lvl, xp, on, busy, hw?, hl? }` (`hw`/`hl`: your wins and losses against that friend) |
+| `fr-add` / `fr-accept` / `fr-remove` | `u` (a username) | `fr-res { act, ok, reason, u }` and a new `fr-list`; the other player gets `fr-ping { act, u }`. Asking someone who asked you accepts. `fr-remove` also declines or takes back a request. At most 100 friends and 50 open requests |
+| `ar-queue` / `ar-cancel` | | `ar-queued { n }` until matched (`ar-start`), `ar-cancelled`. Players are matched by rating, the window widening 25 points a second from 100 |
+| `ar-challenge` | `u` | `ar-sent { u }`; the friend gets `ar-invite { u, look, rating, tier, w, l }` (30 s). Only friends who are online and not in a bout (`not-friends`, `offline`, `busy`) |
+| `ar-accept` / `ar-decline` | `u` | `ar-start` for both, or `ar-declined { u }` to the challenger |
+| `ar-cpu` | `lv` (1–3) | `ar-start` against the CPU |
+| `ar-in` | `m` (held bits), `p` (pressed since the last) | none. Bits: 1 left, 2 right, 4 up, 8 down, 16 shove, 32 sweep, 64 grab, 128 brace, 256 champion's throw, 512 dash forward, 1024 dash back. Sent as `{"t":"ar-in",…}` (that prefix, ≤ 64 bytes) it has its own allowance of 60 a second |
+| `ar-quit` | | gives the bout up |
+| `ar-board` | `k`: `global` \| `friends` | `ar-board { k, rows }`: `{ rank, u, look, rating, tier, w, l, d, streak, lvl, xp, on, me? }`; global is the top 50 (players with a bout) and you. At most one ask every 2 s |
+| `ar-history` | | `ar-history { list: [{ mode, opp, res, delta, at }] }`: your last 10 bouts |
+
+`ar-start { id, side, mode, stage, you, opp, resume? }` (`side` 0 is the left wrestler, `mode` `ranked` | `friend` |
+`cpu`). Then every tick `ar-st { id, k, ph, rd, tm, w, f, c, ev }`: `ph` `intro` | `fight` | `ko` | `over`, `rd` the
+round, `tm` ticks left, `w` rounds won, `f` both wrestlers `[x, face, state, stateTick, balance, stamina, meter, combo,
+kind]`, `c` who holds the clinch (-1 none), `ev` this tick's events (`hit`, `sweep`, `block`, `parry`, `guard-break`,
+`grab`, `clash`, `throw`, `reversal`, `jolt`, `jolt-catch`, `escape`, `grip-swap`, `break`, `super`, `super-throw`,
+`tired`, `round`, `fight`, `ko`, `time`, `match`). At the end `ar-end { id, side, winner, reason, wins, xp, coins,
+rating? { before, after } }` (`winner` -1 a draw; `reason` `done`, `quit`, `left`).
+
+- **The bout:** two rounds win; a round ends when a wrestler's balance (1000) is gone or after 60 s (more balance wins).
+  At most 5 rounds, then rounds won, then damage dealt. Frame data, the clinch and the throws are in `arena-sim.js`.
+- **Results:** `ranked` (Elo, K 32) and `friend` (K 24) bouts change both ratings and records; CPU spars only pay. Pay
+  (operation `arena:<id>`, under the daily earn cap): ranked win 20 coins and 40 XP, loss 15 XP, draw 5 and 20; friendly
+  10 and 25, 10 XP, 5 and 15; CPU 5 and 10, 5 XP. Rating tiers: Novice, then Falcon (Начин) 1050, Hawk (Харцага) 1150,
+  Elephant (Заан) 1250, Garuda (Гарьд) 1350, Lion (Арслан) 1500, Titan (Аварга) 1650.
+- **A dropped connection:** the bout goes on with nothing held; back within 10 s (`ar-hello`) the player gets the bout
+  again, else it is lost (`left`).
+- **Storage:** PostgreSQL tables `naadamy_accounts` (→ `naadamy_identities ON DELETE CASCADE`, unique `name_key`),
+  `naadamy_friends`, `naadamy_arena_stats` and `naadamy_arena_matches`, made at start; JSON: `accounts.json`,
+  `friends.json`, `arena.json`, `arena-matches.json` (the newest 5000 bouts) in `DATA_DIR`.
+- Matchmaking, challenges and bouts live on one server instance; accounts, friends, ratings and records are shared.
+  `ARENA_TICK_MS` (tests only) runs bouts faster.

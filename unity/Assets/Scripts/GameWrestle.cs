@@ -27,6 +27,7 @@ public sealed partial class Game
             if (g.Btn(Loc.L("Чөлөөтэй барилдах", "Wrestle freely") + "\n<size=" + Mathf.RoundToInt(g.U(10)) + ">" + Loc.L("Наадамд 9 даваа барилдаж цол аваарай", "Wrestle 9 rounds at the Naadam and earn titles") + "</size>", true, 64)) g.Later(() => g.Swap(WrestleModal.Tournament(g, 1)));
             if (g.Btn(Loc.L("Барилдаж сурах", "Learn to wrestle") + "\n<size=" + Mathf.RoundToInt(g.U(10)) + ">" + (wr.school > 0 ? Loc.L("Мэх бүрийг энгийнээр дахин үзэх", "Go over every move again, nice and simple") : Loc.L("Мэх бүрийг энгийнээр тайлбарлаад дасгал хийнэ", "Every move explained simply, then practice")) + "</size>", false, 64)) g.Later(() => g.Swap(new SchoolModal()));
             GUILayout.EndHorizontal();
+            if (g.Btn(Loc.L("Бөхийн өргөө · онлайн", "Wrestling Arena · online") + "\n<size=" + Mathf.RoundToInt(g.U(10)) + ">" + Loc.L("Найз, гэр бүлтэйгээ бодит цагт барилдаж, чансаанд өрсөлд", "Wrestle friends and family live and climb the rankings") + "</size>", true, 56)) g.Later(() => g.Swap(new ArenaHubModal()));
             if (g.Btn(Loc.L($"Мэхний ном ({Rules.MOVES.Length} мэх)", $"Technique book ({Rules.MOVES.Length} moves)"))) g.Later(() => g.Open(new TechBookModal()));
             g.Fact(fact.ToString());
         }

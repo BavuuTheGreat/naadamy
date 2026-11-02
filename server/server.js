@@ -64,6 +64,11 @@ const board = require('./leaderboard.js')(roomStore);
 const parentEmail = require('./parent-email.js')(roomStore); // weekly report to a grown-up's email; off without RESEND_API_KEY
 const family = require('./family.js')(roomStore, { cloudOf: (id) => getCloudSave(id), onErase: (ids) => eraseLive(ids), onChange: (ids) => board.forget(ids), onGone: (code) => voice.purge(code), email: parentEmail });
 const voice = require('./voice.js')(roomStore, { dataDir: DATA_DIR, checkPin: (message) => family.checkPin(message) }); // memory book voice clips
+// the online arena: wrestler accounts with unique usernames, friends, rated bouts (arena.js, accounts.js, arena-store.js)
+const arenaStore = require('./arena-store.js').createArenaStore({ dataDir: DATA_DIR, pool: roomStore.pool || null });
+const arena = require('./arena.js')(arenaStore, { level: (xp) => walletLevel({ xp }), reward: (id, operation, coins, xp) => payPlayer(id, operation, coins, xp),
+  tickMs: Number(process.env.ARENA_TICK_MS) || undefined }); // ARENA_TICK_MS: only tests run bouts faster than 30 ticks a second
+const accounts = require('./accounts.js')(roomStore, arenaStore, { cloudOf: (id) => getCloudSave(id), onChange: (id) => arena.changed(id), onDelete: (id) => arena.gone([id]) });
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.webmanifest': 'application/manifest+json', '.json': 'application/json', '.txt': 'text/plain; charset=utf-8', '.png': 'image/png',
   '.m4a': 'audio/mp4', '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.wav': 'audio/wav', '.wasm': 'application/wasm', '.data': 'application/octet-stream' };
@@ -93,6 +98,7 @@ function serveStatic(req, res) {
     return basar.handle(req, res);
   }
   if (url.pathname === '/api/family') return family.handle(req, res);
+  if (url.pathname === '/api/account') return accounts.handle(req, res);
   if (url.pathname === '/api/voice' || url.pathname.startsWith('/api/voice/')) return voice.handle(req, res, url.pathname);
   if (url.pathname === '/api/email/confirm' || url.pathname === '/api/email/stop') return parentEmail.handle(req, res, url);
   if (!ROOT || (req.method !== 'GET' && req.method !== 'HEAD')) { res.writeHead(ROOT ? 405 : 404, { 'content-type': 'text/plain; charset=utf-8' }); return res.end(ROOT ? 'Method not allowed' : 'Not found'); }
@@ -174,6 +180,7 @@ let stopping = false;
 async function shutdown() {
   if (stopping) return;
   stopping = true;
+  arena.close();
   await Promise.all([...conns].map((connection) => leave(connection)));
   const savedOnShutdown = await persist();
   try {
@@ -438,10 +445,14 @@ function awardWrestlingResult(r, message) {
   }
 }
 async function grantWrestlingReward(player, matchId, won) {
-  const operation = `wrestle:${matchId}`;
-  const coins = won ? 25 : 0, xp = won ? 30 : 10;
+  return payPlayer(player.id, `wrestle:${matchId}`, won ? 25 : 0, won ? 30 : 10);
+}
+/** Pays a server-decided reward (a bout) into player `id`'s wallet once per `operation`, under the daily earn cap, and tells
+ *  every connection of that player here. The player may have gone: the wallet is paid all the same. */
+async function payPlayer(id, operation, coins, xp) {
+  const here = [...conns].filter((c) => c.player && c.player.id === id);
   try {
-    const outcome = await roomStore.mutateWallet(player.id, operation, (wallet, inventory, earned) => {
+    const outcome = await roomStore.mutateWallet(id, operation, (wallet, inventory, earned) => {
       if (wallet.coins > WALLET_MAX - coins || wallet.xp > WALLET_MAX - xp) {
         return { changed: false, result: { accepted: false, reason: 'limit' } };
       }
@@ -458,13 +469,14 @@ async function grantWrestlingReward(player, matchId, won) {
         result: { accepted: true },
       };
     });
-    player.conn.wallet = outcome.wallet;
-    player.conn.inventory = outcome.inventory;
-    syncPlayerLevel(player.conn);
-    player.conn.send({ t: 'wallet-result', op: operation, ...outcome.result, wallet: outcome.wallet });
+    for (const c of here) {
+      c.wallet = outcome.wallet; c.inventory = outcome.inventory;
+      syncPlayerLevel(c);
+      c.send({ t: 'wallet-result', op: operation, ...outcome.result, wallet: outcome.wallet });
+    }
   } catch (error) {
-    console.error('Could not grant server-validated wrestling reward:', error.message);
-    player.conn.send({ t: 'wallet-result', op: operation, accepted: false, reason: 'storage', wallet: player.conn.wallet });
+    console.error('Could not grant server-validated reward:', error.message);
+    for (const c of here) c.send({ t: 'wallet-result', op: operation, accepted: false, reason: 'storage', wallet: c.wallet });
   }
 }
 async function mutateSharedWrestling(r, mutate) {
@@ -1005,9 +1017,15 @@ async function persistLotAction(conn, action, message) {
 }
 
 function onMessage(conn, text) {
-  const t = Date.now();                                     // simple rate limit: ~20 messages per second
-  conn.tokens = Math.min(30, conn.tokens + ((t - conn.last) / 1000) * 20); conn.last = t;
-  if ((conn.tokens -= 1) < 0) return;
+  const t = Date.now();
+  // a bout's inputs (`ar-in`, small) have their own allowance: 60 a second; everything else ~20 a second
+  if (text.length <= 64 && text.startsWith('{"t":"ar-in"')) {
+    conn.inTokens = Math.min(60, (conn.inTokens ?? 60) + ((t - (conn.inLast || t)) / 1000) * 60); conn.inLast = t;
+    if ((conn.inTokens -= 1) < 0) return;
+  } else {
+    conn.tokens = Math.min(30, conn.tokens + ((t - conn.last) / 1000) * 20); conn.last = t;
+    if ((conn.tokens -= 1) < 0) return;
+  }
   let m; try { m = JSON.parse(text); } catch { return; }
   if (!m || typeof m.t !== 'string') return;
 
@@ -1031,6 +1049,13 @@ function onMessage(conn, text) {
   }
   const p = conn.player, r = conn.room;
   if (!p || !r) return;
+  if (m.t.startsWith('ar-') || m.t.startsWith('fr-')) {
+    arena.handle(conn, m).catch((error) => {
+      console.error('Arena:', error.message);
+      conn.send({ t: 'ar-err', reason: 'storage', of: m.t });
+    });
+    return;
+  }
   switch (m.t) {
     case 'move': {
       const t = Date.now(), next = { x: numf(m.x, 0.5, R.W - 2), y: numf(m.y, 0.5, R.H - 2) };
@@ -1185,6 +1210,7 @@ function endMatch(r, match, winner, reason) {
   awardWrestlingResult(r, message);
 }
 function leave(conn) {
+  arena.leave(conn);
   const p = conn.player, r = conn.room;
   conn.player = null; conn.room = null;
   if (!p || !r || r.players.get(p.id) !== p) return Promise.resolve();
@@ -1206,6 +1232,8 @@ function leave(conn) {
 async function eraseLive(ids) {
   const gone = new Set(ids);
   board.clear();
+  arena.gone(ids);
+  await arenaStore.deleteAccounts(ids).catch((error) => console.error('Could not drop erased arena accounts:', error.message)); // PostgreSQL: already gone with their identities
   for (const connection of [...conns]) {
     if (!connection.player || !gone.has(connection.player.id)) continue;
     await leave(connection);
@@ -1250,6 +1278,7 @@ server.on('listening', () => {
 });
 roomStore.load().then(async (state) => {
   saved = state;
+  await arenaStore.init(); // after room-store's tables: accounts belong to player identities
   void voice.init(); // the private Supabase bucket, if missing
   await roomStore.startRealtime(INSTANCE_ID, handleRealtime, () => { // events sent while the listener was down are gone: re-derive erased families and who is online
     resyncRealtime({ roomStore, rooms, saved: () => saved, localIds: () => [...conns].filter((c) => c.player).map((c) => c.player.id), handle: handleRealtime })

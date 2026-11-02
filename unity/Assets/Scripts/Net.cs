@@ -212,10 +212,11 @@ public sealed class Net
     void Handle(Game g, J m)
     {
         string t = m["t"].S;
+        if (t != null && (t.StartsWith("ar-") || t.StartsWith("fr-"))) { g.OnArenaMsg(m); return; } // the online arena (Arena.cs)
         switch (t)
         {
             case "_closed":
-                ws = null; bool was = Online; others.Clear(); lots = null; g.EndRemoteMatch(); syncing = false;
+                ws = null; bool was = Online; others.Clear(); lots = null; g.EndRemoteMatch(); g.ArenaLost(); syncing = false;
                 if (closed) { status = "solo"; return; }
                 if (replaced) { status = "solo"; closed = true; return; }
                 if (!welcomed && Time.realtimeSinceStartup - connectAt > 60) { GiveUp(g, Loc.L("Сервертэй холбогдож чадсангүй. Серверийн хаягаа шалгаад дахин холбогдоорой.", "Could not reach the server. Check the server address and connect again.")); return; } // never got in for a minute (a sleeping server wakes within that): a wrong address, not a dropped line
@@ -266,6 +267,7 @@ public sealed class Net
                 g.GerSync(); // my ger, started while playing alone, comes along to a free plot
                 Sync(g);
                 cloudSent = ""; SaveCloud(g); // the server merges this device's lessons, badges… and sends back the whole copy
+                g.ArenaHello(); // the arena account (and a bout this player is still in)
                 return;
             case "cloud":
                 if (g.V == null) return;
