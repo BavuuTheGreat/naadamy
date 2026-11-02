@@ -69,6 +69,9 @@ public sealed partial class Game
             GUILayout.BeginHorizontal(); g.Text(Loc.L("Изометр харагдац", "Isometric view")); GUILayout.FlexibleSpace();
             if (GUILayout.Button(!g.App.flatView ? Loc.L("Асаалттай", "On") : Loc.L("Унтраалттай", "Off"), !g.App.flatView ? g.sPrimary : g.sBtn, GUILayout.MinHeight(g.U(36)))) { g.App.flatView = !g.App.flatView; g.App.Save(); }
             GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal(); g.Text(Loc.L("Суралцах горим", "Learning mode")); GUILayout.FlexibleSpace(); // the choice made after the intro (GameModeModal)
+            if (GUILayout.Button(g.StoryMode ? Loc.L("Түүхийн горим", "Story mode") : Loc.L("Чөлөөт горим", "Free roam"), g.sBtn, GUILayout.MinHeight(g.U(36)))) { g.App.gameMode = g.StoryMode ? "roam" : "story"; g.App.Save(); }
+            GUILayout.EndHorizontal();
             GUILayout.Label("<b>" + Loc.L("Басар AI (Claude)", "Basar AI (Claude)") + "</b>", g.sLabel);
             g.Small(Loc.L("Компьютер дээр “node server/server.js” ажиллуулж, түүний хаягийг энд бичвэл Басар AI ухаантай болно (ж: 192.168.1.10:8000). Хоосон бол офлайн мэдлэгээр ажиллана.", "Run “node server/server.js” on a computer and write its address here to give Basar AI smarts (e.g. 192.168.1.10:8000). Empty: offline knowledge."));
             GUILayout.BeginHorizontal();

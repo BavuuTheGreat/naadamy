@@ -43,10 +43,10 @@ public sealed partial class Game
             allies.Add(new Fighter { kind = "ally", name = "kereit", look = new Look { deel = "red", hat = "loovuuz", skin = "#D9A06E", coat = "gray" }, mounted = true, x = 20, y = 164, hp = 9, max = 9 });
             NextSeg();
         }
-        // the stage draws at most four buttons; rally stays reachable from the keyboard (T) through the KEYS table in Story.cs
+        // the stage draws at most four buttons: while the allies' horn is full, Allies takes Roll's place so a touch screen can blow it (T on a keyboard)
         public override (string id, Tx label)[] Buttons => seg == 3
             ? new[] { ("call", new Tx("Дуудах", "Call")), ("dash", new Tx("Бултах", "Dodge")), ("roll", new Tx("Эргэх", "Roll")) }
-            : new[] { ("strike", new Tx("Цохих", "Strike")), ("shoot", new Tx("Сум", "Arrow")), ("dash", new Tx("Бултах", "Dodge")), ("roll", new Tx("Эргэх", "Roll")) };
+            : new[] { ("strike", new Tx("Цохих", "Strike")), ("shoot", new Tx("Сум", "Arrow")), ("dash", new Tx("Бултах", "Dodge")), rally >= 1 ? ("rally", new Tx("Холбоо", "Allies")) : ("roll", new Tx("Эргэх", "Roll")) };
 
         // ---------------------------------------------------------------- the four parts of the fight
         void NextSeg()
@@ -152,11 +152,11 @@ public sealed partial class Game
             }
             if (seg < 3)
             {
-                if (s.Pressed("strike") && me.state != "dash" && (me.state != "strike" || me.st > 0.18f))
+                if (s.Pressed("strike") && me.state != "dash" && me.state != "roll" && (me.state != "strike" || me.st > 0.18f))
                 {
                     me.combo = me.comboT > 0 && me.combo < 3 ? me.combo + 1 : 1; me.comboT = 0.55f; me.state = "strike"; me.st = 0; Sfx.Swish();
                 }
-                if (s.Pressed("shoot") && me.state != "dash")
+                if (s.Pressed("shoot") && me.state != "dash" && me.state != "roll")
                 {
                     if (arrows > 0 && me.cd <= 0)
                     {
@@ -444,7 +444,7 @@ public sealed partial class Game
             if (seg < 3)
             {
                 var hr = g.URect(60, 58, 150, 12); g.Box(hr, new Color(0, 0, 0, 0.6f)); g.Box(new Rect(hr.x + U, hr.y + U, (hr.width - 2 * U) * rally, hr.height - 2 * U), rally >= 1 && (int)(t * 4) % 2 == 0 ? Px.Col("#fff2a8") : Px.Col("#e0b04a"));
-                GUI.Label(g.URect(214, 54, 300, 20), rally >= 1 ? Loc.L(TouchUI ? "“Холбоо” — бүрээ дуудах!" : "R — холбоотнуудаа дууд!", TouchUI ? "Allies — blow the horn!" : "R — call your allies!") : Loc.L("Холбоотнуудын бүрээ", "Allies' horn"), new GUIStyle(g.sPixel) { fontSize = PxSize(U * 12), alignment = TextAnchor.MiddleLeft, normal = { textColor = Color.white } });
+                GUI.Label(g.URect(214, 54, 300, 20), rally >= 1 ? Loc.L(TouchUI ? "“Холбоо” — бүрээ дуудах!" : "T — холбоотнуудаа дууд!", TouchUI ? "Allies — blow the horn!" : "T — call your allies!") : Loc.L("Холбоотнуудын бүрээ", "Allies' horn"), new GUIStyle(g.sPixel) { fontSize = PxSize(U * 12), alignment = TextAnchor.MiddleLeft, normal = { textColor = Color.white } });
             }
             // what to do now
             string goal = seg == 3 ? (borte == null ? Loc.L("Зугтаж буй хүмүүсийн дундаас Бөртийг ол: тэргэнд ойртоод “Дуудах”", "Find Börte among the fleeing people: ride near the carts and Call") : Loc.L("Бөртэ!", "Börte!"))
