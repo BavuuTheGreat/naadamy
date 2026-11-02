@@ -8,7 +8,7 @@ const R = require('../web/js/village/rules.js');
 const ROOM_CODE = /^[A-Z0-9]{3,8}$/;
 const PLAYER_ID = /^[\w-]{4,24}$/;
 const PLAYER_TICKET = /^[a-f0-9]{64}$/i;
-const WALLET_OPERATION = /^(?:[a-f0-9]{32}|(?:quest|activity):\d{4}-\d{2}-\d{2}:[a-z]{1,16}|wrestle:[\w-]{1,64})$/i;
+const WALLET_OPERATION = /^(?:[a-f0-9]{32}|(?:quest|activity):\d{4}-\d{2}-\d{2}:[a-z]{1,16}|(?:wrestle|arena):[\w-]{1,64})$/i;
 const WALLET_MAX = 2_000_000_000;
 const REALTIME_CHANNEL = 'naadamy_realtime';
 const FAMILY_CODE = /^[A-HJ-NP-Z2-9]{8}$/;
@@ -422,7 +422,7 @@ function createRoomStore({ dataDir, databaseUrl = readDatabaseUrl(), Pool: PoolO
         wallet.earned = outcome && outcome.changed && outcome.earned ? cleanEarned(outcome.earned) : earned;
         const result = outcome && outcome.result ? outcome.result : { accepted: false };
         wallet.operations[operation] = result;
-        const oldOperations = Object.keys(wallet.operations).filter((key) => !key.startsWith('quest:') && !key.startsWith('activity:') && !key.startsWith('wrestle:'));
+        const oldOperations = Object.keys(wallet.operations).filter((key) => !key.startsWith('quest:') && !key.startsWith('activity:') && !key.startsWith('wrestle:') && !key.startsWith('arena:'));
         for (const old of oldOperations.slice(0, Math.max(0, oldOperations.length - 200))) delete wallet.operations[old];
         Object.defineProperty(wallets, id, { value: wallet, writable: true, configurable: true, enumerable: true });
         writeIdentityFile(walletFile, wallets);
@@ -517,6 +517,7 @@ function createRoomStore({ dataDir, databaseUrl = readDatabaseUrl(), Pool: PoolO
   return {
     kind: 'postgres',
     sharedRealtime: true,
+    pool, // the arena store (arena-store.js) keeps its tables in the same database
     async load() {
       const legacy = readLegacyFile(dataFile);
       const client = await pool.connect();
