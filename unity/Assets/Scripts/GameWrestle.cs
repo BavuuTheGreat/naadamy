@@ -117,6 +117,9 @@ public sealed partial class Game
         const float DEVEE_BEAT = 0.7f; const int DEVEE_TAPS = 4;
         static readonly string[] ARROWS = { "←", "→", "↑", "↓" };
         readonly int round, need; readonly string oppName, oppSkin; readonly float oppSkill, barSpeed, sharp; readonly bool young, practice; string coachMove;
+        readonly Rules.Title oppT;
+        // live bout with a friend: the dance and the skill games are played here, the server picks the round's winner
+        readonly string matchId, side; bool pvp => matchId != null; bool oppReady, cut, noBout;
         readonly Live live = new Live(400, 180);   // the stadium, full screen (wide, so a widescreen shows the whole field)
         Vector2 panelScroll;
         public override bool FullScreen => true;
@@ -128,14 +131,15 @@ public sealed partial class Game
         string sk; float skT0, skLimit; int[] seq; int si, serr, sn, sneed; bool held; float sv, szc, szw, bx2, bvx, bpush, bgood; int bdir; int holdFrame = -9;
         bool won; (string newTitle, bool champion) res; float opened;
 
-        WrestleModal(Game g, int round, string oppName, float oppSkill, string oppSkin, bool practice = false)
+        WrestleModal(Game g, int round, string oppName, float oppSkill, string oppSkin, bool practice = false, string matchId = null, string side = null, string oppTitle = null)
         {
-            this.round = round; this.oppName = oppName; this.oppSkill = oppSkill; this.oppSkin = oppSkin; this.practice = practice;
-            need = round >= 7 ? 3 : 2;
+            this.round = round; this.oppName = oppName; this.oppSkill = oppSkill; this.oppSkin = oppSkin; this.practice = practice; this.matchId = matchId; this.side = side;
+            need = round >= 7 && matchId == null ? 3 : 2;   // a live bout is first to two falls, as the server counts it
+            oppT = Rules.TitleById(matchId != null ? oppTitle : Rules.OPP_TITLE[Mathf.Clamp(round, 0, Rules.OPP_TITLE.Length - 1)]);
             young = g.V.age > 0 && g.V.age <= 9;   // little ones get a slower marker and wider targets
             barSpeed = (2.1f + round * 0.2f) * (young ? 0.85f : 1) * (practice ? 0.8f : 1); sharp = Mathf.Max(1, 1 + round * 0.08f - (young ? 0.1f : 0));
             intro = Time.time + 1.1f; t0 = Time.time; opened = Time.time; Sfx.Crowd(); Sfx.Horn();   // the scene switch: the curtain opens on the stadium, the crowd roars
-            var myT = Rules.TitleById(Rules.TitleFor(g.V.wr)); var opT = Rules.TitleById(Rules.OPP_TITLE[round]);
+            var myT = Rules.TitleById(Rules.TitleFor(g.V.wr)); var opT = oppT;
             string Named(Rules.Title t, string n) => (t != null ? t.name + " " : "") + n;
             herald = Loc.L($"«{Named(myT, g.MyName)}, {Named(opT, oppName)} хоёр барилдана! Хүчит бөхчүүд дэвээгээ хийцгээ!»", $"\"{Named(myT, g.MyName)} and {Named(opT, oppName)} will wrestle! Mighty wrestlers, do your eagle dance!\"");
             msg = Loc.L("Дэвээ! Товч гэрэлтэх үед дарж бүргэд шиг дэв (4 удаа).", "Eagle dance! Tap when the button glows (4 times).");
@@ -146,7 +150,53 @@ public sealed partial class Game
         public static WrestleModal Tournament(Game g, int round) => round == 8
             ? new WrestleModal(g, round, Rules.SETSEN, 0.12f + round * 0.07f + 0.06f, Rules.SKINS[Rules.SKINS.Length - 1])
             : new WrestleModal(g, round, Rules.WR_NAMES[(round * 5 + Random.Range(0, 4)) % Rules.WR_NAMES.Length], 0.12f + round * 0.07f, Rules.Pick(Rules.SKINS));
+        /** A live bout with a friend in the room, after the server's wr-start. `side` is "a" (the one who invited) or "b". */
+        public static WrestleModal Pvp(Game g, string matchId, string side, string oppName, Look oppLook) =>
+            new WrestleModal(g, 3, oppName, 0, oppLook != null && Rules.SKINS.Contains(oppLook.skin) ? oppLook.skin : Rules.SKINS[0], false, matchId, side, oppLook?.title);
         public override float Width => 560;
+        public override bool CanEscape => !pvp;   // leaving a live bout is giving up: only the buttons do it
+
+        /** The server's wrestling messages for this bout: the other one has chosen, a round's result, the end. */
+        public void OnNet(Game g, J m)
+        {
+            string t = m["t"].S;
+            if (t == "wr-wait") { if (!overF) { oppReady = true; Sfx.Pop(); } }
+            else if (t == "wr-result" && !overF)
+            {
+                bool isA = side == "a"; int r = m["r"].I * (isA ? 1 : -1);
+                string mm = isA ? m["ma"].S : m["mb"].S, om = isA ? m["mb"].S : m["ma"].S;
+                float mp = isA ? m["pa"].F : m["pb"].F, op = isA ? m["pb"].F : m["pa"].F;
+                if (!Rules.MOVES.Any(q => q.id == mm) || !Rules.MOVES.Any(q => q.id == om)) return;
+                if (mm != move) bonus = 0;   // the round ran out before I chose: the server played a weak move for me
+                Apply(r, mm, mp, om, op);
+                a = isA ? m["score"]["a"].I : m["score"]["b"].I; b = isA ? m["score"]["b"].I : m["score"]["a"].I;   // the server's count is the truth
+                target = Mathf.Clamp((a - b) * 12, -26, 26) + (r > 0 ? 6 : r < 0 ? -6 : 0);
+                oppReady = false;
+            }
+            else if (t == "wr-end") FinishPvp(g, m["winner"].S, m["reason"].S);
+        }
+        void FinishPvp(Game g, string winner, string why)
+        {
+            if (overF) return; overF = true; phase = "done"; end = Time.time;
+            if (g.remote == this) g.remote = null;
+            bool someone = !string.IsNullOrEmpty(winner); won = someone && winner == g.V.id;
+            cut = why == "left" || why == "disconnected"; noBout = !someone;
+            pose = !someone ? new[] { "idle", "idle" } : won ? new[] { "dance", "fall" } : new[] { "fall", "dance" };
+            target = !someone ? 0 : won ? 18 : -18;
+            if (won) { Sfx.Win(); g.Confetti(80); } else Sfx.Bad();
+            var wr = g.V.wr; if (won) wr.pvpW++; else if (someone) wr.pvpL++;   // coins and XP come from the server
+            g.V.Save(); g.CheckAchievements();
+            msg = !someone ? Loc.L("Холболт тасарлаа. Барилдаан зогслоо.", "The connection dropped. The bout is over.")
+                : cut ? (won ? Loc.L($"{oppName} барилдаанаас гарлаа. Та яллаа!", $"{oppName} left the bout. You win!") : Loc.L("Та бууж өглөө.", "You gave up."))
+                : won ? Loc.L($"Та {oppName}-г унагаалаа! Бүргэд шиг дэвээрэй!", $"You threw {oppName}! Do the eagle dance!") : Loc.L($"{oppName} яллаа. Дараагийн удаа!", $"{oppName} won. Next time!");
+        }
+        void Leave(Game g) { if (pvp && !overF) g.net.Send("{\"t\":\"wr-quit\"}"); else g.Close(); }   // the server answers a quit with wr-end
+        public override void Closed(Game g)
+        {
+            if (!pvp) return;
+            if (!overF) g.net.Send("{\"t\":\"wr-quit\"}");
+            if (g.remote == this) g.remote = null;
+        }
 
         bool OnBeat() { float q = ((Time.time - intro) % DEVEE_BEAT) / DEVEE_BEAT; return q < 0.2f || q > 0.84f; }
         void DeveeTap(Game g)
@@ -206,7 +256,11 @@ public sealed partial class Game
                     if (el > skLimit) Lock(Mathf.Clamp01(bgood / skLimit * 1.15f));
                 }
             }
-            if (phase == "result" && Time.time - t0 > (a >= need || b >= need ? 0.9f : 1.1f)) { if (a >= need || b >= need) Finish(g, a > b); else { phase = "choose"; } }
+            if (phase == "result" && Time.time - t0 > (a >= need || b >= need ? 0.9f : 1.1f))
+            {
+                if (a < need && b < need) { phase = "choose"; if (pvp) msg = Loc.L("Мэхээ сонго!", "Choose your move!"); }
+                else if (!pvp) Finish(g, a > b);   // a live bout ends on the server's wr-end
+            }
         }
         public override void Press(Game g) { }
         public override void Key(Game g)
@@ -229,6 +283,12 @@ public sealed partial class Game
             heraldOn = false;
             float power = given >= 0 ? given : Mathf.Max(0, 1 - Mathf.Abs(marker - 0.5f) * 2 * sharp);
             if (bonus > 0) { power = Mathf.Min(1, power + bonus); bonus = 0; } // the eagle dance's power
+            if (pvp) // a friend reads you with their own eyes: send the move, the server decides when both have chosen
+            {
+                I.net.WrMove(move, power); phase = "wait"; Sfx.Tap();
+                msg = oppReady ? Loc.L("Мэх илгээлээ…", "Move sent…") : Loc.L($"{oppName} мэхээ сонгож байна…", $"{oppName} is choosing a move…");
+                return;
+            }
             bool repeated = move == lastPlayer;
             if (repeated) power *= 0.8f; // the same move twice in a row is easier to read
             used[move] = (used.TryGetValue(move, out var u) ? u : 0) + 1;
@@ -249,7 +309,7 @@ public sealed partial class Game
             flash = ((r >= 0 ? Rules.MoveById(mm).name : Rules.MoveById(om).name).ToString().ToUpper() + "!", r > 0, Time.time);
             target = Mathf.Clamp((a - b) * 12, -26, 26) + (r > 0 ? 6 : r < 0 ? -6 : 0);
             msg = $"{Rules.MoveById(mm).name} {Mathf.RoundToInt(mp * 100)}%  ·  {Rules.MoveById(om).name} {Mathf.RoundToInt(op * 100)}%  →  " + (r > 0 ? Loc.L("Та давууллаа!", "You gain the upper hand!") : r < 0 ? Loc.L("Өрсөлдөгч давууллаа!", "Your opponent gains!") : Loc.L("Тэнцлээ!", "Even!"));
-            if (wasRepeat && r < 0) msg += " " + Loc.L("(Давтсан мэхийг өрсөлдөгч таньчихлаа!)", "(They saw your repeated move coming!)");
+            if (wasRepeat && r < 0 && !pvp) msg += " " + Loc.L("(Давтсан мэхийг өрсөлдөгч таньчихлаа!)", "(They saw your repeated move coming!)");
             phase = "result"; t0 = Time.time;
         }
         void Finish(Game g, bool w)
@@ -292,7 +352,7 @@ public sealed partial class Game
             var A = Px.Wrestler(RED, g.MySkin, myPose == "grip" && f != 0 && phase == "timing" ? "push" : myPose, phase == "devee" ? df : f); var B = Px.Wrestler(BLUE, oppSkin, opPose, f);
             const int cxm = 190; int ax = Mathf.RoundToInt(cxm - 60 - (1 - ent) * 90) + o + (myPose == "dance" ? -24 : 0), bxx = Mathf.RoundToInt(cxm - 8 + (1 - ent) * 90) + o + (opPose == "dance" ? 24 : 0);
             void Draw1(PxCanvas img, int X, bool flip, int dy = 0) { int Y = ground - img.H * S + dy; Px.R(cx, X + 8, ground - 2, img.W * S - 16, 3, "rgba(40,20,0,.28)"); cx.BlitScaled(img, X, Y, img.W * S, img.H * S, flip); }
-            float cross = overF ? Mathf.Clamp01((ts - end - 1.1f) / 1.6f) : 0;
+            float cross = overF && !noBout ? Mathf.Clamp01((ts - end - 1.1f) / 1.6f) : 0;
             if (cross > 0) // custom: the fallen wrestler gets up and passes under the winner's raised arm
             {
                 var win = Px.Wrestler(won ? RED : BLUE, won ? g.MySkin : oppSkin, "dance", cross < 1 ? 1 : f); var lose = Px.Wrestler(won ? BLUE : RED, won ? oppSkin : g.MySkin, "idle", 0);
@@ -316,12 +376,12 @@ public sealed partial class Game
             }
             var safe = Screen.safeArea; float U = g.UiScale, top = Screen.height - safe.yMax + U * 8;
             // the top bar: the round, both names and their falls, and what the herald calls out
-            string info = (practice ? Loc.L("Бөхийн сургууль · Дасгал", "Wrestling school · Practice") : $"{Loc.L("Наадам", "Naadam")} · {Loc.L("Даваа", "Round")} {round}/9 · {need} {Loc.L("унагаалт", "falls")}")
-                + $"\n<color=#d8342b><b>{g.MyName}</b></color> {new string('●', a)}{new string('○', Mathf.Max(0, need - a))}   ·   {new string('●', b)}{new string('○', Mathf.Max(0, need - b))} <color=#2b5bd8><b>{(Rules.TitleById(Rules.OPP_TITLE[Mathf.Clamp(round, 0, Rules.OPP_TITLE.Length - 1)]) is Rules.Title ot ? ot.name + " " : "")}{oppName}</b></color>"
+            string info = (practice ? Loc.L("Бөхийн сургууль · Дасгал", "Wrestling school · Practice") : pvp ? $"{Loc.L("Найзтайгаа барилдах", "Wrestling a friend")} · {need} {Loc.L("унагаалт", "falls")}" : $"{Loc.L("Наадам", "Naadam")} · {Loc.L("Даваа", "Round")} {round}/9 · {need} {Loc.L("унагаалт", "falls")}")
+                + $"\n<color=#d8342b><b>{g.MyName}</b></color> {new string('●', a)}{new string('○', Mathf.Max(0, need - a))}   ·   {new string('●', b)}{new string('○', Mathf.Max(0, need - b))} <color=#2b5bd8><b>{(oppT != null ? oppT.name + " " : "")}{oppName}</b></color>"
                 + (heraldOn ? $"\n<b>{Loc.L("Засуул", "Herald")}:</b> {herald}" : "");
             var ist = new GUIStyle(g.sNote) { fontSize = g.Ts(12), wordWrap = true }; float iw = Mathf.Min(Screen.width - U * 120, U * 640), ih = ist.CalcHeight(new GUIContent(info), iw) + U * 6;
             GUI.Box(new Rect((Screen.width - iw) / 2, top, iw, ih), info, ist);
-            if (phase != "done" && GUI.Button(new Rect(safe.x + U * 8, top, U * 44, U * 44), "×", g.sBtn)) g.Later(g.Close);
+            if (phase != "done" && GUI.Button(new Rect(safe.x + U * 8, top, U * 44, U * 44), "×", g.sBtn)) g.Later(() => Leave(g));
             // the controls
             float pwid = Mathf.Min(Screen.width - U * 16, U * 820); var pr = new Rect((Screen.width - pwid) / 2, split - U * 4, pwid, Screen.height - split - U * 4 - (Screen.height - safe.yMax) - safe.y * 0);
             GUILayout.BeginArea(pr); GUILayout.BeginVertical(g.sPanel); panelScroll = g.BeginScroll(panelScroll, pr.height - U * 30);
@@ -335,12 +395,13 @@ public sealed partial class Game
                 g.Box(new Rect(0, 0, Screen.width, hh), Color.black); g.Box(new Rect(0, Screen.height - hh, Screen.width, hh), Color.black);
                 float ta = Mathf.Clamp01(sw * 4) * close;
                 GUI.Label(new Rect(0, Screen.height / 2 - U * 40, Screen.width, U * 50), "НААДАМ", new GUIStyle(g.sBig) { fontSize = Mathf.RoundToInt(U * 46), normal = { textColor = new Color(1, 0.84f, 0.3f, ta) } });
-                GUI.Label(new Rect(0, Screen.height / 2 + U * 10, Screen.width, U * 30), practice ? Loc.L("Бөхийн сургууль", "Wrestling school") : Loc.L($"Бөхийн барилдаан · {round}-р даваа", $"Wrestling · Round {round}"), new GUIStyle(g.sTitle) { alignment = TextAnchor.MiddleCenter, normal = { textColor = new Color(1, 1, 1, ta) } });
+                GUI.Label(new Rect(0, Screen.height / 2 + U * 10, Screen.width, U * 30), practice ? Loc.L("Бөхийн сургууль", "Wrestling school") : pvp ? Loc.L($"Бөхийн барилдаан · {oppName}", $"Wrestling · {oppName}") : Loc.L($"Бөхийн барилдаан · {round}-р даваа", $"Wrestling · Round {round}"), new GUIStyle(g.sTitle) { alignment = TextAnchor.MiddleCenter, normal = { textColor = new Color(1, 1, 1, ta) } });
             }
         }
         void Controls(Game g)
         {
             g.Text(msg);
+            if (pvp && oppReady && phase != "wait" && phase != "done") g.Small("<color=#f7c646>" + Loc.L($"{oppName} мэхээ сонгочихлоо!", $"{oppName} has chosen!") + "</color>");
             if (practice && phase != "done") // the school's coach explains as you go
             {
                 if (phase == "devee") g.Fact(Loc.L("Товч гэрэлтэх бүрт дар. Сайн бүжиглэвэл эхний мэх чинь хүчтэй болно!", "Tap each time the button glows. A good dance makes your first move stronger!"), true, Loc.L("Бүргэд шиг бүжиглэ", "Dance like an eagle"));
@@ -374,6 +435,11 @@ public sealed partial class Game
                         break;
                     }
                 case "skill": SkillUI(g); break;
+                case "wait": g.Small(new string('.', 1 + (int)(Time.time * 2) % 3)); break;
+                case "done" when pvp:
+                    if (!noBout) g.Fact(Loc.L("Унасан бөх ялсан бөхийн суган доогуур гарч хүндэтгэл үзүүлдэг. Ялагдсан ч хүндэтгэлтэй байх нь бөхийн ёс.", "The fallen wrestler passes under the winner's arm as a sign of respect. Losing with honour is the wrestler's way."), true, Loc.L("Бөхийн ёс", "Wrestling custom"));
+                    if (g.Btn(Loc.L("Хаах", "Close"), true, 44)) g.Later(g.Close);
+                    break;
                 case "done":
                     g.Fact(won ? Loc.L("Унасан бөх ялсан бөхийн суган доогуур гарч хүндэтгэл үзүүлдэг. Ялсан бөх дараа нь тугаа тойрон дэвдэг.", "The fallen wrestler passes under the winner's arm as a sign of respect. The winner then dances around the flag.")
                         : Loc.L("Унасан бөх ялсан бөхийн суган доогуур гарч хүндэтгэл үзүүлдэг. Ялагдсан ч хүндэтгэлтэй байх нь бөхийн ёс.", "The fallen wrestler passes under the winner's arm as a sign of respect. Losing with honour is the wrestler's way."), true, Loc.L("Бөхийн ёс", "Wrestling custom"));
@@ -388,7 +454,7 @@ public sealed partial class Game
                     GUILayout.EndHorizontal();
                     break;
             }
-            if (phase != "done" && g.Btn(Loc.L("Гарах", "Leave"), false, 28)) g.Later(g.Close);
+            if (phase != "done" && g.Btn(pvp ? Loc.L("Бууж өгөх", "Give up") : Loc.L("Гарах", "Leave"), false, 28)) g.Later(() => Leave(g));
         }
         void SkillUI(Game g)
         {
