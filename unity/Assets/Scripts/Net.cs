@@ -219,7 +219,7 @@ public sealed class Net
                 ws = null; bool was = Online; others.Clear(); lots = null; g.EndRemoteMatch(); g.ArenaLost(); syncing = false;
                 if (closed) { status = "solo"; return; }
                 if (replaced) { status = "solo"; closed = true; return; }
-                if (!welcomed && Time.realtimeSinceStartup - connectAt > 60) { GiveUp(g, Loc.L("Сервертэй холбогдож чадсангүй. Серверийн хаягаа шалгаад дахин холбогдоорой.", "Could not reach the server. Check the server address and connect again.")); return; } // never got in for a minute (a sleeping server wakes within that): a wrong address, not a dropped line
+                if (!welcomed && Time.realtimeSinceStartup - connectAt > 60) { string at = Family.ServerOf(g, g.V); GiveUp(g, Loc.L($"Сервертэй холбогдож чадсангүй ({at}). Тохиргоонд серверийн хаягаа шалгаад дахин холбогдоорой.", $"Could not reach the server ({at}). Check the server address in Settings and connect again.")); return; } // never got in for a minute (a sleeping server wakes within that): a wrong address, not a dropped line
                 status = "reconnecting"; retryAt = Time.realtimeSinceStartup + Mathf.Min(10, 1.5f * ++retry);
                 if (was) g.Toast(Loc.L("Сервертэй холболт тасарлаа. Дахин холбогдож байна…", "Lost the server. Reconnecting…"));
                 return;
