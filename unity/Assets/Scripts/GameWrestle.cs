@@ -23,13 +23,27 @@ public sealed partial class Game
             g.Small(next == null ? Loc.L("Та хамгийн дээд цол Аварга хүртсэн!", "You hold the highest title, Avarga!")
                 : next.id == "avarga" ? Loc.L("Наадамд дахин түрүүлбэл Аварга цол хүртэнэ!", "Win the Naadam once more to become an Avarga!")
                 : Loc.L($"Наадамд {next.need} давбал «{next.name}» цол хүртэнэ.", $"Win {next.need} rounds at the Naadam to earn the \"{next.name}\" title."));
-            GUILayout.BeginHorizontal();
-            if (g.Btn(Loc.L("Чөлөөтэй барилдах", "Wrestle freely") + "\n<size=" + Mathf.RoundToInt(g.U(10)) + ">" + Loc.L("Наадамд 9 даваа барилдаж цол аваарай", "Wrestle 9 rounds at the Naadam and earn titles") + "</size>", true, 64)) g.Later(() => g.Swap(WrestleModal.Tournament(g, 1)));
-            if (g.Btn(Loc.L("Барилдаж сурах", "Learn to wrestle") + "\n<size=" + Mathf.RoundToInt(g.U(10)) + ">" + (wr.school > 0 ? Loc.L("Мэх бүрийг энгийнээр дахин үзэх", "Go over every move again, nice and simple") : Loc.L("Мэх бүрийг энгийнээр тайлбарлаад дасгал хийнэ", "Every move explained simply, then practice")) + "</size>", false, 64)) g.Later(() => g.Swap(new SchoolModal()));
-            GUILayout.EndHorizontal();
-            if (g.Btn(Loc.L("Бөхийн өргөө · онлайн", "Wrestling Arena · online") + "\n<size=" + Mathf.RoundToInt(g.U(10)) + ">" + Loc.L("Найз, гэр бүлтэйгээ бодит цагт барилдаж, чансаанд өрсөлд", "Wrestle friends and family live and climb the rankings") + "</size>", true, 56)) g.Later(() => g.Swap(new ArenaHubModal()));
-            if (g.Btn(Loc.L($"Мэхний ном ({Rules.MOVES.Length} мэх)", $"Technique book ({Rules.MOVES.Length} moves)"))) g.Later(() => g.Open(new TechBookModal()));
+            Tiles(g,
+                (Loc.L("Чөлөөтэй барилдах", "Wrestle freely"), Loc.L("Наадамд 9 даваа, цол ав", "9 Naadam rounds, earn titles"), true, () => g.Swap(WrestleModal.Tournament(g, 1))),
+                (Loc.L("Барилдаж сурах", "Learn to wrestle"), wr.school > 0 ? Loc.L("Мэхүүдийг дахин үзэх", "Go over the moves again") : Loc.L("Мэх бүрийг энгийнээр", "Every move, made simple"), false, () => g.Swap(new SchoolModal())),
+                (Loc.L("Бөхийн өргөө · онлайн", "Wrestling Arena · online"), Loc.L("Найзтайгаа бодит цагт, чансаа", "Live bouts with friends, rankings"), true, () => g.Swap(new ArenaHubModal())),
+                (Loc.L("Мэхний ном", "Technique book"), Loc.L($"{Rules.MOVES.Length} мэх, юу юуг давдаг", $"{Rules.MOVES.Length} moves, what beats what"), false, () => g.Open(new TechBookModal())));
             g.Fact(fact.ToString());
+        }
+        /** The arena's choices as a grid of equal tiles, two to a row: a bold name over one short line. */
+        static void Tiles(Game g, params (string title, string sub, bool primary, System.Action act)[] tiles)
+        {
+            float h = g.U(56), gap = g.U(6);
+            for (int i = 0; i < tiles.Length; i += 2)
+            {
+                var row = GUILayoutUtility.GetRect(10, h, GUILayout.ExpandWidth(true)); float w = (row.width - gap) / 2;
+                for (int k = 0; k < 2 && i + k < tiles.Length; k++)
+                {
+                    var tl = tiles[i + k]; var r = new Rect(row.x + k * (w + gap), row.y, w, h);
+                    if (GUI.Button(r, $"<b>{tl.title}</b>\n<size={g.Ts(10)}>{tl.sub}</size>", tl.primary ? g.sPrimary : g.sBtn)) g.Later(tl.act);
+                }
+                GUILayout.Space(gap);
+            }
         }
         public override void Press(Game g) => g.Close();
     }
