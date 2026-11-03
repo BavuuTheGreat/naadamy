@@ -219,7 +219,7 @@ public sealed class Net
                 ws = null; bool was = Online; others.Clear(); lots = null; g.EndRemoteMatch(); g.ArenaLost(); syncing = false;
                 if (closed) { status = "solo"; return; }
                 if (replaced) { status = "solo"; closed = true; return; }
-                if (!welcomed && Time.realtimeSinceStartup - connectAt > 60) { GiveUp(g, Loc.L("Сервертэй холбогдож чадсангүй. Серверийн хаягаа шалгаад дахин холбогдоорой.", "Could not reach the server. Check the server address and connect again.")); return; } // never got in for a minute (a sleeping server wakes within that): a wrong address, not a dropped line
+                if (!welcomed && Time.realtimeSinceStartup - connectAt > 60) { string at = Family.ServerOf(g, g.V); GiveUp(g, Loc.L($"Сервертэй холбогдож чадсангүй ({at}). Тохиргоонд серверийн хаягаа шалгаад дахин холбогдоорой.", $"Could not reach the server ({at}). Check the server address in Settings and connect again.")); return; } // never got in for a minute (a sleeping server wakes within that): a wrong address, not a dropped line
                 status = "reconnecting"; retryAt = Time.realtimeSinceStartup + Mathf.Min(10, 1.5f * ++retry);
                 if (was) g.Toast(Loc.L("Сервертэй холболт тасарлаа. Дахин холбогдож байна…", "Lost the server. Reconnecting…"));
                 return;
@@ -573,8 +573,8 @@ public sealed partial class Game
         public override void Press(Game g) => g.Close();
     }
 
-    // ---------------------------------------------------------------- live wrestling with a friend: both pick a move and power, the server decides
-    RemoteWrestle remote;
+    // ---------------------------------------------------------------- live wrestling with a friend: the Naadam stadium bout (GameWrestle.cs), the server decides each round
+    WrestleModal remote;
     public void OnWrestleMsg(J m)
     {
         string t = m["t"].S;
@@ -582,64 +582,13 @@ public sealed partial class Game
         else if (t == "wr-declined") Toast(m["name"].S + Loc.L(" одоохондоо барилдахгүй гэлээ.", " declined for now."));
         else if (t == "wr-start")
         {
-            bool a = m["a"]["id"].S == V.id; var opp = a ? m["b"] : m["a"];
-            CloseAll(); remote = new RemoteWrestle { id = m["id"].S, side = a ? "a" : "b", opp = opp["name"].S, oppLook = opp["look"].IsNull ? new Look() : new Look { deel = opp["look"]["deel"].S ?? "blue", skin = opp["look"]["skin"].S ?? "#D9A06E" } };
+            bool a = m["a"]["id"].S == V.id; var opp = a ? m["b"] : m["a"]; var ol = opp["look"];
+            var oppLook = ol.IsNull ? new Look() : new Look { deel = ol["deel"].S ?? "blue", skin = ol["skin"].S ?? "#D9A06E", title = ol["title"].S };
+            remote = null; CloseAll();   // remote is cleared first, so closing an older bout does not quit this new one
+            remote = WrestleModal.Pvp(this, m["id"].S, a ? "a" : "b", opp["name"].S, oppLook);
             Open(remote);
         }
-        else remote?.OnMsg(this, m);
+        else remote?.OnNet(this, m);
     }
-    public void EndRemoteMatch() { if (remote != null) { remote.OnMsg(this, J.Parse("{\"t\":\"wr-end\",\"winner\":null,\"reason\":\"disconnected\"}")); } }
-    public sealed class RemoteWrestle : Modal
-    {
-        public string id, side, opp; public Look oppLook;
-        string phase = "pick", move, last; float t0, power; int me, them; bool won, done;
-        public override bool CanEscape => false;
-        public override void Tick(Game g, float dt) { }
-        public void OnMsg(Game g, J m)
-        {
-            string t = m["t"].S;
-            if (t == "wr-wait") { if (phase == "pick" || phase == "power") Sfx.Pop(); }
-            else if (t == "wr-result")
-            {
-                bool a = side == "a"; string mm = a ? m["ma"].S : m["mb"].S, mo = a ? m["mb"].S : m["ma"].S; int res = m["r"].I * (a ? 1 : -1);
-                me = a ? m["score"]["a"].I : m["score"]["b"].I; them = a ? m["score"]["b"].I : m["score"]["a"].I;
-                last = Loc.L("Чи: ", "You: ") + Rules.MoveById(mm).name + " · " + opp + ": " + Rules.MoveById(mo).name + "\n" + (res > 0 ? Loc.L("Чи энэ даваанд яллаа!", "You won this round!") : res < 0 ? Loc.L($"{opp} энэ даваанд яллаа.", $"{opp} won this round.") : Loc.L("Тэнцлээ.", "A draw."));
-                if (res > 0) Sfx.Good(); else if (res < 0) Sfx.Bad();
-                phase = "pick"; move = null;
-            }
-            else if (t == "wr-end")
-            {
-                if (done) return; done = true; g.remote = null; string winnerId = m["winner"].S;
-                won = !string.IsNullOrEmpty(winnerId) && winnerId == g.V.id;
-                string why = m["reason"].S;
-                var wr = g.V.wr; if (won) { wr.pvpW++; /* server awards rewards */ Sfx.Win(); g.Confetti(80); } else if (!string.IsNullOrEmpty(winnerId)) { wr.pvpL++; /* server awards rewards */ }
-                g.V.Save(); g.CheckAchievements();
-                phase = "end"; last = why == "left" || why == "disconnected" ? Loc.L("Барилдаан тасарлаа.", "The match was interrupted.") : won ? Loc.L("Чи яллаа! Бүргэд шиг дэв!", "You won! Do the eagle dance!") : Loc.L($"{opp} яллаа. Дараагийн удаа!", $"{opp} won. Next time!");
-            }
-        }
-        public override void Draw(Game g)
-        {
-            g.Title(Loc.L("Найзтайгаа барилдах", "Wrestling a friend"));
-            GUILayout.BeginHorizontal(); g.IconAt(Px.Char(g.V.look, 0, 0), 48); GUILayout.Label($"<b>{me} : {them}</b>", new GUIStyle(g.sBig) { alignment = TextAnchor.MiddleCenter }); g.IconAt(Px.Char(oppLook, 0, 0), 48); GUILayout.EndHorizontal();
-            g.Small(Loc.L($"Хоёр даваа түрүүлж авсан нь ялна · {opp}", $"First to two rounds wins · {opp}"));
-            if (last != null) g.Fact(last, true);
-            if (phase == "end") { if (g.Btn(Loc.L("Хаах", "Close"), true, 44)) g.Later(g.Close); return; }
-            if (phase == "pick")
-            {
-                g.Text(Loc.L("Мэхээ сонго:", "Pick your move:"));
-                foreach (var mv in Rules.MOVES) if (g.Btn(mv.name.ToString(), false, 38)) { var id2 = mv.id; g.Later(() => { move = id2; phase = "power"; t0 = Time.time; }); }
-            }
-            else if (phase == "power")
-            {
-                // tap when the needle is in the green: that is your move's strength
-                float q = Mathf.PingPong((Time.time - t0) * 1.4f, 1); power = 1 - Mathf.Abs(q - 0.5f) * 2;
-                var r = GUILayoutUtility.GetRect(10, g.U(26), GUILayout.ExpandWidth(true));
-                g.Box(r, Px.Col("#2b1e2e")); g.Box(new Rect(r.x + r.width * 0.35f, r.y + 2, r.width * 0.3f, r.height - 4), Px.Col("#2ea35f")); g.Box(new Rect(r.x + r.width * q - 2, r.y - 3, 4, r.height + 6), Px.Col("#f7c646"));
-                if (g.Btn(Loc.L("Одоо!", "Now!"), true, 48)) g.Later(() => { g.net.WrMove(move, power); phase = "wait"; Sfx.Tap(); });
-            }
-            else g.Text(Loc.L($"{opp} мэхээ сонгож байна…", $"Waiting for {opp}…"));
-            if (g.Btn(Loc.L("Бууж өгөх", "Give up"), false, 30)) g.Later(() => { g.net.Send("{\"t\":\"wr-quit\"}"); });
-        }
-        public override void Press(Game g) { }
-    }
+    public void EndRemoteMatch() { remote?.OnNet(this, J.Parse("{\"t\":\"wr-end\",\"winner\":null,\"reason\":\"disconnected\"}")); }
 }
