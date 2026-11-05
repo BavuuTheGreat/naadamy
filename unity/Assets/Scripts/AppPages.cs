@@ -50,6 +50,8 @@ public sealed partial class Game
     sealed class SettingsModal : Modal
     {
         string server;
+        // the Google account linked to this player (GoogleSignIn.cs): asked once when the window opens
+        bool gAsked, gKnown, gOff, gBusy; string gEmail = "", gErr = "";
         public override void Draw(Game g)
         {
             server ??= g.V.server;
@@ -72,6 +74,7 @@ public sealed partial class Game
             GUILayout.BeginHorizontal(); g.Text(Loc.L("Суралцах горим", "Learning mode")); GUILayout.FlexibleSpace(); // the choice made after the intro (GameModeModal)
             if (GUILayout.Button(g.StoryMode ? Loc.L("Түүхийн горим", "Story mode") : Loc.L("Чөлөөт горим", "Free roam"), g.sBtn, GUILayout.MinHeight(g.U(36)))) { g.App.gameMode = g.StoryMode ? "roam" : "story"; g.App.Save(); }
             GUILayout.EndHorizontal();
+            Google(g);
             GUILayout.Label("<b>" + Loc.L("Басар AI (Claude)", "Basar AI (Claude)") + "</b>", g.sLabel);
             g.Small(Loc.L("Компьютер дээр “node server/server.js” ажиллуулж, түүний хаягийг энд бичвэл Басар AI ухаантай болно (ж: 192.168.1.10:8000). Хоосон бол офлайн мэдлэгээр ажиллана.", "Run “node server/server.js” on a computer and write its address here to give Basar AI smarts (e.g. 192.168.1.10:8000). Empty: offline knowledge."));
             GUILayout.BeginHorizontal();
@@ -85,6 +88,43 @@ public sealed partial class Game
             if (g.Btn(Loc.L("Хаах", "Close"), true, 36)) g.Later(g.Close);
         }
         public override void Press(Game g) { }
+        void Google(Game g)
+        {
+            GUILayout.Label("<b>" + Loc.L("Google бүртгэл", "Google account") + "</b>", g.sLabel);
+            if (!gAsked)
+            {
+                gAsked = true; SaveData.EnsureTicket(g.V);
+                g.StartCoroutine(GoogleApi.Post(Family.ServerOf(g, g.V), "{\"act\":\"me\",\"id\":" + J.Quote(g.V.id) + ",\"ticket\":" + J.Quote(g.V.ticket) + "}", r =>
+                {
+                    gKnown = true; gErr = r["ok"].B ? "" : GoogleApi.Why(r);
+                    gOff = r["ok"].B && !r["enabled"].B; gEmail = r["ok"].B ? r["email"].S ?? "" : "";
+                }));
+            }
+            if (!gKnown) { g.Small(Loc.L("Шалгаж байна…", "Checking…")); return; }
+            if (gErr != "") { g.Small("<color=#e14b3d>" + gErr + "</color>"); return; }
+            if (gOff) { g.Small(Loc.L("Сервер дээр Google нэвтрэлт асаагүй байна.", "Google sign-in is not turned on on the server.")); return; }
+            if (gEmail != "")
+            {
+                GUILayout.BeginHorizontal(); g.Small(Loc.L("Холбогдсон: ", "Linked: ") + "<b>" + gEmail + "</b>"); GUILayout.FlexibleSpace();
+                if (g.SmallBtn(Loc.L("Салгах", "Unlink"), false, 96, !gBusy)) g.Later(() =>
+                {
+                    gBusy = true;
+                    g.StartCoroutine(GoogleApi.Post(Family.ServerOf(g, g.V), "{\"act\":\"unlink\",\"id\":" + J.Quote(g.V.id) + ",\"ticket\":" + J.Quote(g.V.ticket) + "}", r =>
+                    {
+                        gBusy = false;
+                        if (r["ok"].B) { gEmail = ""; g.Toast(Loc.L("Google бүртгэлийг салгалаа.", "Google account unlinked.")); } else g.Toast(GoogleApi.Why(r));
+                    }));
+                });
+                GUILayout.EndHorizontal();
+                return;
+            }
+            g.Small(Loc.L("Холбовол өөр утас, компьютер дээр Google-ээр нэвтэрч, зоос, XP, хувцсаа авч болно.", "Link it to sign in with Google on another phone or computer and keep your coins, XP and clothes."));
+            if (g.Btn(Loc.L("Google бүртгэл холбох", "Link a Google account"), false, 36)) g.Later(() => g.Open(new GoogleModal("link", r =>
+            {
+                gEmail = r["email"].S ?? ""; g.Confetti(30);
+                g.Toast(Loc.L("Google бүртгэл холбогдлоо!", "Google account linked!"));
+            })));
+        }
     }
 
     // ================================================================ family / parent dashboard

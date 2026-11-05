@@ -45,6 +45,9 @@ npm start        # = node server/server.js
 | `ANTHROPIC_BASE_URL` | Anthropic API-ийн өөр хаяг (анхдагч `https://api.anthropic.com`) |
 | `NODE_ENV=production` эсвэл `RENDER` | Прокси (Render)-ийн `x-forwarded-for` хаягийг итгэнэ. Render дээр өөрөө тохирно |
 | `HEARTBEAT_MS` | Холболт шалгах ping-ийн мөчлөг (анхдагч `20000` мс) |
+| `ADMIN_KEY` | `/admin` хуудас болон `/api/admin/stats`-ийн нууц түлхүүр (тоглогчийн тоо). Байхгүй бол хоёулаа 404 |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google-ээр нэвтрэх (`server/google-auth.js`). Google Cloud Console-ийн OAuth "Web application" client; redirect URI нь `PUBLIC_URL` + `/api/google/callback`. Байхгүй бол унтраалттай |
+| `PUBLIC_URL` | Серверийн нийтийн хаяг (имэйлийн холбоос, Google-ийн redirect URI). Анхдагч нь Render-ийн хаяг |
 
 **CORS_ORIGINS:** хөтчөөс API-г дуудаж болох хаягууд нь `https://naadamy-unity.vercel.app` (болон `naadamy-unity-…vercel.app` preview), локал сүлжээний хаяг (`localhost`, `127.0.0.1`, `192.168.x.x`, `10.x.x.x`; зөвхөн `http://`) болон `CORS_ORIGINS`-д бичсэн хаягууд. Бусад сайтын хуудаснаас ирсэн хүсэлтийг хөтөч хориглоно.
 

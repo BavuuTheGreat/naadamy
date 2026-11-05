@@ -438,6 +438,8 @@ public sealed partial class Game
             g.Gap(8);
             if (tab != "family" && GUILayout.Button("<u>" + Loc.L("Гэр бүлийн кодоор нэвтрэх", "Log in with a family code") + "</u>", new GUIStyle(g.sCenter) { fontSize = Mathf.RoundToInt(g.U(14)), normal = { textColor = Color.white } }))
                 g.Later(() => { tab = "family"; famStep = 0; err = ""; sel.Clear(); });
+            if (GUILayout.Button("<u>" + Loc.L("Google-ээр нэвтрэх", "Sign in with Google") + "</u>", new GUIStyle(g.sCenter) { fontSize = Mathf.RoundToInt(g.U(14)), normal = { textColor = Color.white } }))
+                g.Later(() => g.Open(new GoogleModal("login", g.EnterWithGoogle)));
             if (GUILayout.Button("<u>" + Loc.L("Төслийн тухай", "About the project") + "</u>", new GUIStyle(g.sCenter) { fontSize = Mathf.RoundToInt(g.U(14)), normal = { textColor = Color.white } })) g.Later(() => g.Open(new AboutPage()));
             GUILayout.FlexibleSpace();
             GUILayout.EndArea();

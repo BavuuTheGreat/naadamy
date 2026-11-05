@@ -19,4 +19,16 @@ mergeInto(LibraryManager.library, {
   },
   /** The page's devicePixelRatio, capped at 2 like the canvas (WebGLTemplates/Naadamy/index.html). */
   NaadamyDpr: function () { return Math.min(window.devicePixelRatio || 1, 2); },
+  /** Opens `url` in a new tab when the pointer that is down now comes up. A browser only lets a page open a tab inside a
+   *  click, and Unity hears the click a frame later, so GoogleSignIn.cs calls this on the button's pointer-down and the
+   *  tab opens on the same press's pointer-up. Returns at once; a press that never comes up opens nothing after 5 s. */
+  NaadamyOpenOnRelease: function (urlPtr) {
+    var url = UTF8ToString(urlPtr);
+    var events = ['pointerup', 'touchend', 'mouseup'];
+    var done = false;
+    var stop = function () { events.forEach(function (e) { window.removeEventListener(e, open, true); }); };
+    var open = function () { if (done) return; done = true; stop(); window.open(url, '_blank', 'noopener'); };
+    events.forEach(function (e) { window.addEventListener(e, open, true); });
+    setTimeout(function () { done = true; stop(); }, 5000);
+  },
 });
