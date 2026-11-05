@@ -7,7 +7,7 @@ using UnityEngine;
 
 public sealed partial class Game
 {
-    // ================================================================ pointer: a finger that drags becomes a joystick right where it landed; a quick tap walks there
+    // ================================================================ pointer: on a phone the joystick sits fixed at the bottom left (StickHome); a quick tap walks there
     const float STICK_R = 56;
     sealed class Drag { public int id; public Vector2 p0, p; public bool on; }
     Drag drag; Vector2 stick; bool stickOn, runLock, sprintHeld; float lastTouch = -9, guiOX, guiOY;
@@ -31,12 +31,12 @@ public sealed partial class Game
             for (int i = 0; i < Input.touchCount; i++) { var tp = Input.GetTouch(i).position; if (sprintRect.Contains(new Vector2(tp.x, Screen.height - tp.y))) sprintHeld = true; }
             if (Input.touchCount == 0 && Input.GetMouseButton(0) && sprintRect.Contains(new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y))) sprintHeld = true;
         }
+        if (drag != null && drag.id >= 0 && Input.touchCount == 0) drag = null; // a lift lost to a full-screen window must not leave the stick held
         stickOn = drag != null && drag.on;
         if (stickOn)
         {
             // the ring slides along behind a thumb that goes past it, so pulling back turns around at once
-            float R = StickR; var off = drag.p - drag.p0; if (off.magnitude > R) { drag.p0 += off - off.normalized * R; off = drag.p - drag.p0; }
-            var d = off / R; stick = new Vector2(d.x, -d.y);
+            stick = StickAt(new Vector2(drag.p.x, Screen.height - drag.p.y));
         }
     }
     void PointerEvent(int id, Vector2 pos, bool down, bool up)
@@ -44,12 +44,13 @@ public sealed partial class Game
         if (modal != null && modal.FullScreen) { modal.Pointer(this, id, pos, down, up); return; }
         if (modal == null && P2Pointer(id, pos, down, up)) return;
         if (GerBuildPointer(id, pos, down, up)) return; // dragging a ger part from the tray (GerBuild.cs)
-        if (down && drag == null && modal == null && !OverUI(pos)) drag = new Drag { id = id, p0 = pos, p = pos };
+        // a finger that lands on the fixed joystick steers; the mouse on a computer never does (the keys walk there)
+        if (down && drag == null && modal == null && !OverUI(pos)) drag = new Drag { id = id, p0 = pos, p = pos, on = id >= 0 && TouchUI && NearStick(new Vector2(pos.x, Screen.height - pos.y)) };
         if (drag == null || drag.id != id) return;
         drag.p = pos;
-        // a finger that drags becomes the joystick; the mouse on a computer never does (the keys walk there), its click just walks to the spot
-        if (!drag.on && (id >= 0 || TouchUI) && (pos - drag.p0).magnitude > 12 * UiScale / 2) { drag.on = true; path.Clear(); pending = null; }
-        if (up) { if (!drag.on && modal == null) TapWorld(pos); drag = null; }
+        if (drag.on && down) { path.Clear(); pending = null; }
+        // a quick tap elsewhere walks to the spot; a swipe elsewhere does nothing
+        if (up) { if (!drag.on && modal == null && (id < 0 || (pos - drag.p0).magnitude <= 12 * UiScale / 2)) TapWorld(pos); drag = null; }
     }
 
     // ================================================================ toasts, floating text, tap rings, confetti
@@ -203,7 +204,23 @@ public sealed partial class Game
     /** The layout is scaled to fit 900 units across, so on a phone held upright small type turns tiny: this many units, but at
      *  least `css` CSS pixels on the screen. On a computer it is just `units`. */
     public float AtLeastCss(float units, float css) => Mathf.Max(units, css * Dpr / UiScale);
-    float StickR => Mathf.Max(STICK_R * UiScale, 62 * Dpr); // a thumb-sized ring on a phone, however small the layout is
+    public float StickR => Mathf.Max(STICK_R * UiScale, 62 * Dpr); // a thumb-sized ring on a phone, however small the layout is
+    /** The joystick's fixed centre in GUI pixels (y down): bottom left, right of the village's button column; lift raises it over a scene's bottom row. */
+    public Vector2 StickHome(float lift = 0) => new Vector2(U(130) + StickR, Screen.height - U(14 + lift) - StickR);
+    /** A finger landing here takes the joystick: a little wider than the ring, so a thumb need not aim. */
+    public bool NearStick(Vector2 gui, float lift = 0) => (gui - StickHome(lift)).magnitude < StickR * 1.5f;
+    /** Where a finger at gui pushes the joystick: -1..1 on each axis, y down as GUI y. */
+    public Vector2 StickAt(Vector2 gui, float lift = 0) { var d = (gui - StickHome(lift)) / StickR; return d.magnitude > 1 ? d.normalized : d; }
+    /** The joystick at its home, its knob pushed by v; off is the GUI group's offset when drawn inside one. */
+    public void DrawStick(Vector2 v, float lift = 0, Vector2 off = default)
+    {
+        // a dark glassy ring with arrows, and a gold knob under the thumb with a soft shadow
+        var b = StickHome(lift) - off; float R = StickR;
+        GUI.DrawTexture(new Rect(b.x - R, b.y - R, R * 2, R * 2), Tex(StickBase()));
+        var k = b + v * R; float kr = R * 0.5f, sh = R * 0.08f;
+        var old = GUI.color; GUI.color = new Color(0, 0, 0, 0.3f); GUI.DrawTexture(new Rect(k.x - kr + sh, k.y - kr + sh * 1.5f, kr * 2, kr * 2), Tex(Disc())); GUI.color = old;
+        GUI.DrawTexture(new Rect(k.x - kr, k.y - kr, kr * 2, kr * 2), Tex(StickKnob()));
+    }
     Rect UR(float x, float y, float w, float h) => new Rect(U(x), U(y), U(w), U(h));
     void Ui(Rect r) { if (Event.current.type == EventType.Repaint) uiNext.Add(r); }
     bool Button(Rect r, string text, GUIStyle st = null) { Ui(r); return GUI.Button(r, text, st ?? sBtn); }
@@ -325,15 +342,7 @@ public sealed partial class Game
             var f = floaters[i]; float age = Time.time - f.t; if (age > 1.4f) { floaters.RemoveAt(i); continue; }
             var p = ToGui(f.at.x, f.at.y - age * 0.9f); Outlined(p.x, p.y, f.text, ts * 1.1f, f.col, 1 - age / 1.4f);
         }
-        if (stickOn)
-        {
-            // a dark glassy ring with arrows, and a gold knob under the thumb with a soft shadow
-            var b = new Vector2(drag.p0.x, Screen.height - drag.p0.y); float R = StickR;
-            GUI.DrawTexture(new Rect(b.x - R, b.y - R, R * 2, R * 2), Tex(StickBase()));
-            var k = b + stick * R; float kr = R * 0.5f, sh = R * 0.08f; // stick.y grows downwards, as GUI y does
-            var old = GUI.color; GUI.color = new Color(0, 0, 0, 0.3f); GUI.DrawTexture(new Rect(k.x - kr + sh, k.y - kr + sh * 1.5f, kr * 2, kr * 2), Tex(Disc())); GUI.color = old;
-            GUI.DrawTexture(new Rect(k.x - kr, k.y - kr, kr * 2, kr * 2), Tex(StickKnob()));
-        }
+        if (TouchUI && modal == null) DrawStick(stickOn ? stick : Vector2.zero); // stick.y grows downwards, as GUI y does
     }
     static string LastWord(string s) { int i = s.LastIndexOf(' '); return i < 0 ? s : s.Substring(i + 1); }
     /** Your level in a gold box and your name in a blue one, with your wrestling title above. */
@@ -568,7 +577,7 @@ public sealed partial class Game
             if (TouchUI && Button(UR(vw - 166, vh - 184, 158, 56), Loc.L("Сум харвах (F)", "Shoot (F)"), sPrimary)) ShootNearest();
             else if (!TouchUI) GUI.Box(UR(vw / 2 - 160, 94, 320, 26), Loc.L("F: сум харвах · E: уургадах", "F: shoot · E: lasso"), sToast);
         }
-        if (Time.timeSinceLevelLoad < 9 && modal == null && TouchUI) GUI.Box(UR(vw / 2 - 160, vh - 130, 320, 32), Loc.L("Дэлгэц дээр чирж алх", "Drag on the screen to walk"), sNote); // on a computer, Bolormaa teaches the keys as you go
+        if (Time.timeSinceLevelLoad < 9 && modal == null && TouchUI) GUI.Box(UR(vw / 2 - 160, vh - 130, 320, 32), Loc.L("Зүүн доорх джойстикоор алх", "Walk with the joystick at the bottom left"), sNote); // on a computer, Bolormaa teaches the keys as you go
         // bottom left: Basar, chat, the bag, and "more" (3D, learn, quests, music)
         float ty = vh - 12 - 50, tx = 10;
         if (Round(UR(tx, ty, 50, 50), null, "•••")) Later(() => { moreOpen = !moreOpen; Sfx.Tap(); });

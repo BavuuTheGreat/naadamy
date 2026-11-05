@@ -9,7 +9,10 @@
   <style>
     html, body { margin: 0; height: 100%; overflow: hidden; background: #182441; overscroll-behavior: none; }
     /* the game fills the window; it is drawn for landscape, like the phone app */
-    #unity-canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; background: #182441; touch-action: none; outline: none; }
+    /* the canvas keeps clear of a phone's notch and home bar in landscape (viewport-fit=cover lets the page reach under them) */
+    #unity-canvas { position: fixed; top: env(safe-area-inset-top); right: env(safe-area-inset-right); bottom: env(safe-area-inset-bottom); left: env(safe-area-inset-left);
+      width: calc(100% - env(safe-area-inset-left) - env(safe-area-inset-right)); height: calc(100% - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+      display: block; background: #182441; touch-action: none; outline: none; }
     .screen { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 24px;
       box-sizing: border-box; text-align: center; font: 700 18px/1.4 system-ui, -apple-system, 'Segoe UI', sans-serif; color: #fff; }
     #loading { z-index: 3; overflow: hidden; isolation: isolate; gap: 0; padding: 24px;
@@ -74,6 +77,16 @@
       devicePixelRatio: Math.min(window.devicePixelRatio || 1, 2), // sharp, without making phones draw 3x the pixels
     }, (p) => { document.querySelector('#fill').style.width = Math.round(p * 100) + '%'; })
       .then(() => { document.querySelector('#loading').remove(); document.querySelector('#unity-canvas').focus(); })
+      .then(() => {
+        // phones: the first tap goes full screen and holds landscape (Android Chrome); where the browser can't (iPhone Safari), nothing changes
+        if (!matchMedia('(pointer: coarse)').matches) return;
+        const full = () => {
+          const el = document.documentElement, req = el.requestFullscreen || el.webkitRequestFullscreen;
+          if (!req || document.fullscreenElement) return;
+          Promise.resolve(req.call(el, { navigationUI: 'hide' })).then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape')).catch(() => {});
+        };
+        document.addEventListener('touchend', full, { once: true });
+      })
       .catch((e) => { document.querySelector('#loading').innerHTML = '<div>Тоглоом ачаалж чадсангүй.<br><small>The game could not load: ' + String(e).replace(/</g, '&lt;') + '</small></div>'; });
   </script>
 </body>

@@ -1,6 +1,6 @@
 // Нутаг and the aimag trips in first person (js/fp.js): a Minecraft-style voxel world with mouse look, WASD, Space jump
 // with gravity, sprint (Shift, double-tap W or the Run button), auto-jump up one block and swimming. E or a click uses
-// whatever you are facing. Phones get a joystick on the left half of the screen and drag-to-look on the right.
+// whatever you are facing. Phones get a fixed joystick at the bottom left and drag-to-look everywhere else.
 // The worlds themselves are built by the web version's js/fpworld.js and exported by Tools/export-web-data.js
 // (Resources/World/*.bytes); the block textures are its 16×16 atlas (Resources/Art/fp_atlas).
 using System;
@@ -201,7 +201,7 @@ public sealed partial class Game
             hint = () => Loc.L("Ойртож харвал E", "Face something and press E"),
         };
         string welcome = "<b>" + Loc.L("Нутгаа өөрийн нүдээр!", "Nutag in first person!") + "</b>\n" + (Game.TouchUI
-            ? Loc.L("Зүүн талд чирж алхана, баруун талд чирж эргэн харна. Морины уяанаас морь унаж давхиж болно!", "Drag on the left to walk, on the right to look around. Take a horse from the hitching line and ride!")
+            ? Loc.L("Зүүн доорх джойстикоор алхана, бусад газар чирж эргэн харна. Морины уяанаас морь унаж давхиж болно!", "Walk with the joystick at the bottom left; drag anywhere else to look around. Take a horse from the hitching line and ride!")
             : Loc.L("WASD алхах, хулганаар харах, Space үсрэх, Shift гүйх, E харилцах. Морины уяанаас морь унаж давхиж болно!", "WASD walk, mouse to look, Space jump, Shift sprint, E interact. Take a horse from the hitching line and ride!"));
         src.info = () => Time.time - t0 < 9 ? welcome : null;
         t0 = Time.time;
@@ -265,6 +265,7 @@ public sealed partial class Game
         System.Collections.IEnumerator building; int built, chunks;
         // the player, in blocks: x east, z south, y up
         float Px_, Py, Pz, vx, vy, vz, yaw = Mathf.PI / 2, pitch = -0.08f, fov = 1.25f, bob; bool ground, sprint, inWater, runLock, locked;
+        const float STICK_LIFT = 64; // above the row of buttons along the bottom
         float lastW = -9, dogX, dogZ, lockAt; bool sawLock; Vector2 move; readonly Dictionary<int, (bool left, Vector2 p0, Vector2 p)> touches = new Dictionary<int, (bool, Vector2, Vector2)>();
         Thing near; Act ctx; float ctxT; Color fog, lo, hi; bool snowing; string season;
         bool oldFog; FogMode oldMode; Color oldColor; float oldStart, oldEnd;
@@ -448,6 +449,7 @@ public sealed partial class Game
 
         public override void Tick(Game g, float dt)
         {
+            if (Game.TouchUI && Input.touchCount == 0 && touches.Count > 0) { touches.Clear(); move = Vector2.zero; } // a lift lost to a window that opened over the view
             if (building != null && !building.MoveNext()) building = null;
             if (locked) CheckLock(g);
             if (locked)
@@ -490,11 +492,11 @@ public sealed partial class Game
                 if (g.battle != null && !g.battle.over) Shoot(g); else Interact(g);
                 return;
             }
-            // touch: left part = joystick, right part = look
-            if (down) { if (g.OverUI(pos)) return; touches[id] = (pos.x < Screen.width * 0.45f, pos, pos); return; }
+            // touch: the fixed joystick moves (raised over the bottom button row), anywhere else looks
+            var gp = new Vector2(pos.x, Screen.height - pos.y);
+            if (down) { if (g.OverUI(pos)) return; bool st = g.NearStick(gp, STICK_LIFT); touches[id] = (st, pos, pos); if (st) { var v0 = g.StickAt(gp, STICK_LIFT); move = new Vector2(v0.x, -v0.y); } return; }
             if (!touches.TryGetValue(id, out var s)) return;
-            float unit = 50 * g.UiScale;
-            if (s.left) { var d = (pos - s.p0) / unit; if (d.magnitude > 1) d.Normalize(); move = d; }
+            if (s.left) { var v = g.StickAt(gp, STICK_LIFT); move = new Vector2(v.x, -v.y); }
             else { var d = pos - s.p; yaw += d.x * 0.0055f / g.UiScale * 2; pitch = Mathf.Clamp(pitch + d.y * 0.0055f / g.UiScale * 2, -1.55f, 1.55f); }
             touches[id] = (s.left, s.p0, pos);
             if (up) { if (s.left) move = Vector2.zero; touches.Remove(id); }
@@ -594,7 +596,8 @@ public sealed partial class Game
             if (!string.IsNullOrEmpty(info))   // what is said here, in a box as tall as the words
             {
                 var ist = new GUIStyle(g.sNote) { alignment = TextAnchor.MiddleLeft, fontSize = g.Ts(12), wordWrap = true }; float iw = Mathf.Min(520, vw - 16), ih = Mathf.Max(56, ist.CalcHeight(new GUIContent(info), g.U(iw)) / g.UiScale + 4);
-                var ir = g.URect(8, vh - 68 - ih, iw, ih); g.UiAdd(ir); GUI.Box(ir, info, ist);
+                // phones: under the title, clear of the joystick
+                var ir = g.URect(8, Game.TouchUI ? 56 : vh - 68 - ih, iw, ih); g.UiAdd(ir); GUI.Box(ir, info, ist);
             }
             float bx0 = 8;
             foreach (var (label, run) in src.buttons) { string l = label(); float w = Mathf.Max(90, l.Length * 10 + 32); if (g.Button(g.URect(bx0, vh - 60, w, 52), l)) g.Later(run); bx0 += w + 6; }
@@ -606,6 +609,7 @@ public sealed partial class Game
             string act = nl != null ? nl + (Game.TouchUI ? "" : " (E)") : Game.TouchUI ? Loc.L("Ойртож хараад товчийг дар", "Face something and tap the button") : src.hint?.Invoke() ?? Loc.L("Ойртож харвал E", "Face something and press E");
             if (g.Button(g.URect(vw - 166, vh - 64, 158, 56), act, g.sPrimary)) Interact(g);
             GUI.enabled = was;
+            if (Game.TouchUI && g.modal == this) g.DrawStick(touches.Values.Any(q => q.left) ? new Vector2(move.x, -move.y) : Vector2.zero, STICK_LIFT, new Vector2(sx, sy));
             GUI.EndGroup();
         }
         static float Mod(float a, float m) => m <= 0 ? 0 : ((a % m) + m) % m;
