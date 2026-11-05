@@ -46,7 +46,7 @@ npm start        # = node server/server.js
 | `NODE_ENV=production` эсвэл `RENDER` | Прокси (Render)-ийн `x-forwarded-for` хаягийг итгэнэ. Render дээр өөрөө тохирно |
 | `HEARTBEAT_MS` | Холболт шалгах ping-ийн мөчлөг (анхдагч `20000` мс) |
 | `ADMIN_KEY` | `/admin` хуудас болон `/api/admin/stats`-ийн нууц түлхүүр (тоглогчийн тоо). Байхгүй бол хоёулаа 404 |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google-ээр нэвтрэх (`server/google-auth.js`). Google Cloud Console-ийн OAuth "Web application" client; redirect URI нь `PUBLIC_URL` + `/api/google/callback`. Байхгүй бол унтраалттай |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google-ээр нэвтрэх (`server/google-auth.js`). Google Cloud Console-ийн OAuth "Web application" client; redirect URI нь `PUBLIC_URL` + `/api/google/callback`. Android-ийн нэг товшилтын нэвтрэлтэд мөн адил project-д **Android** client (package `com.pineconeacademy.naadamy`, APK-г гарын үсэг зурсан keystore-ийн SHA-1) үүсгэнэ; түүний ID-г хаана ч бичихгүй. Байхгүй бол унтраалттай |
 | `PUBLIC_URL` | Серверийн нийтийн хаяг (имэйлийн холбоос, Google-ийн redirect URI). Анхдагч нь Render-ийн хаяг |
 | `RESEND_API_KEY`, `EMAIL_FROM` | Имэйл илгээх (Resend): эцэг эхийн долоо хоногийн тайлан, мартсан нууц үгийн 6 оронтой код (`server/email-accounts.js`). Байхгүй бол нууц үг сэргээх нь `mail-off` гэж хариулна |
 

@@ -1,0 +1,24 @@
+// Android's own Google account picker for "Sign in with Google" (GoogleSignIn.cs, OneTap.java): Credential Manager.
+// Unity builds this folder (*.androidlib) as a Gradle library module of the app.
+apply plugin: 'com.android.library'
+
+def unityInt = { String name, int fallback -> project.hasProperty(name) ? (project.property(name) as int) : fallback }
+
+android {
+    namespace 'com.pineconeacademy.naadamy.onetap'
+    compileSdk unityInt('unity.compileSdkVersion', 35)
+    defaultConfig {
+        minSdk unityInt('unity.minSdkVersion', 26)
+        consumerProguardFiles 'proguard-rules.pro'
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+dependencies {
+    implementation 'androidx.credentials:credentials:1.3.0'
+    implementation 'androidx.credentials:credentials-play-services-auth:1.3.0'
+    implementation 'com.google.android.libraries.identity.googleid:googleid:1.1.1'
+}

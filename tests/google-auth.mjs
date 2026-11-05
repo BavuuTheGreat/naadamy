@@ -2,7 +2,7 @@
 // Google's token endpoint is faked; everything else runs for real over HTTP with the JSON store.
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { randomBytes } from 'node:crypto';
+import { generateKeyPairSync, randomBytes, sign } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -18,7 +18,20 @@ const idToken = (claims) => `${b64({ alg: 'RS256' })}.${b64({ iss: 'https://acco
 // the Google account each authorization code stands for, as the fake token endpoint answers
 const accounts = new Map();
 let lastTokenRequest = null;
+// Google's signing keys for Android's one-tap tokens: one real RSA key the test signs with
+const { publicKey, privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+const KID = 'test-key-1';
+let certsFetched = 0;
+const nativeToken = (claims, kid = KID, key = privateKey) => {
+  const head = b64({ alg: 'RS256', kid, typ: 'JWT' });
+  const body = b64({ iss: 'https://accounts.google.com', aud: CLIENT_ID, exp: Math.floor(Date.now() / 1000) + 600, email_verified: true, ...claims });
+  return `${head}.${body}.${sign('RSA-SHA256', Buffer.from(`${head}.${body}`), key).toString('base64url')}`;
+};
 async function fakeFetch(url, options) {
+  if (url === 'https://www.googleapis.com/oauth2/v3/certs') {
+    certsFetched++;
+    return { ok: true, status: 200, headers: { get: () => 'public, max-age=3600' }, json: async () => ({ keys: [{ ...publicKey.export({ format: 'jwk' }), kid: KID, alg: 'RS256', use: 'sig' }] }) };
+  }
   assert.equal(url, 'https://oauth2.googleapis.com/token');
   const form = new URLSearchParams(options.body);
   lastTokenRequest = form;
@@ -122,6 +135,36 @@ try {
   assert.equal((await signIn({ mode: 'link', ...other }, 'code-sara')).polled.status, 'done');
   await google.forget([other.id]);
   assert.equal((await signIn({ mode: 'login' }, 'code-sara')).polled.reason, 'not-linked');
+
+  // Android one-tap: a nonce from the server, a token signed by Google's key carrying it, then link or log in
+  const tapKid = { id: 'kid-0003', ticket: randomBytes(32).toString('hex') };
+  assert.ok(await store.authenticatePlayer(tapKid.id, tapKid.ticket));
+  const n1 = await api({ act: 'nonce' });
+  assert.equal(n1.ok, true);
+  assert.equal(n1.clientId, CLIENT_ID);
+  const tapLinked = await api({ act: 'native', mode: 'link', ...tapKid, idToken: nativeToken({ sub: '2001', email: 'tuul@gmail.com', given_name: 'Туул', nonce: n1.nonce }) });
+  assert.deepEqual(tapLinked, { ok: true, status: 'done', mode: 'link', email: 'tuul@gmail.com' });
+  assert.equal((await api({ act: 'me', ...tapKid })).email, 'tuul@gmail.com');
+  // a nonce works once
+  assert.equal((await api({ act: 'native', mode: 'login', idToken: nativeToken({ sub: '2001', email: 'tuul@gmail.com', nonce: n1.nonce }) })).reason, 'expired');
+  const n2 = await api({ act: 'nonce' });
+  const tapLogin = await api({ act: 'native', mode: 'login', idToken: nativeToken({ sub: '2001', email: 'tuul@gmail.com', given_name: 'Туул', nonce: n2.nonce }) });
+  assert.equal(tapLogin.status, 'done');
+  assert.equal(tapLogin.id, tapKid.id);
+  assert.equal(tapLogin.name, 'Туул');
+  assert.ok(await store.authenticatePlayer(tapKid.id, tapLogin.ticket), 'the one-tap device ticket works');
+  assert.equal(certsFetched, 1, "Google's keys are kept, not fetched for every sign-in");
+  // refused: a nonce the server never gave, a token signed by another key, another app's token, an unverified email, linking without the ticket
+  assert.equal((await api({ act: 'native', mode: 'login', idToken: nativeToken({ sub: '2001', email: 'tuul@gmail.com', nonce: 'made-up' }) })).reason, 'expired');
+  const forger = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey;
+  const n3 = await api({ act: 'nonce' });
+  assert.equal((await api({ act: 'native', mode: 'login', idToken: nativeToken({ sub: '2001', email: 'tuul@gmail.com', nonce: n3.nonce }, KID, forger) })).reason, 'unverified');
+  assert.equal((await api({ act: 'native', mode: 'login', idToken: nativeToken({ sub: '2001', email: 'tuul@gmail.com', nonce: n3.nonce, aud: 'other-app' }) })).reason, 'unverified');
+  assert.equal((await api({ act: 'native', mode: 'login', idToken: nativeToken({ sub: '2001', email: 'tuul@gmail.com', nonce: n3.nonce, email_verified: false }) })).reason, 'unverified');
+  assert.equal((await api({ act: 'native', mode: 'login', idToken: 'not.a.token' })).reason, 'unverified');
+  assert.equal((await api({ act: 'native', mode: 'link', id: tapKid.id, ticket: randomBytes(32).toString('hex'), idToken: nativeToken({ sub: '2001', email: 'tuul@gmail.com', nonce: n3.nonce }) })).reason, 'identity');
+  // a Google account linked to nobody can't log in with one-tap either
+  assert.equal((await api({ act: 'native', mode: 'login', idToken: nativeToken({ sub: '9999', email: 'new@gmail.com', nonce: n3.nonce }) })).reason, 'not-linked');
 
   // the per-address limit on starting sign-ins
   const limited = createGoogleAuth(store, null, { dataDir, env, fetch: fakeFetch, perMinute: 2 });
