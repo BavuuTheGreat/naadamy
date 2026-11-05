@@ -4,7 +4,7 @@ services:
     runtime: node
     region: singapore
     plan: 0.5c-512mb
-    buildCommand: npm ci && node --check server/server.js && node --check server/room-store.js && node --check server/family.js && node --check server/client-ip.js && node --check server/voice.js && node --check server/parent-email.js && node --check server/arena.js && node --check server/arena-sim.js && node --check server/arena-bot.js && node --check server/arena-store.js && node --check server/accounts.js && node --check server/admin-stats.js && node --check server/google-auth.js && node --check server/email-accounts.js
+    buildCommand: npm ci && node --check server/server.js && node --check server/room-store.js && node --check server/family.js && node --check server/client-ip.js && node --check server/voice.js && node --check server/parent-email.js && node --check server/arena.js && node --check server/arena-sim.js && node --check server/arena-bot.js && node --check server/arena-store.js && node --check server/accounts.js && node --check server/admin-stats.js && node --check server/google-auth.js && node --check server/email-accounts.js && node --check server/apple-auth.js
     startCommand: node server/server.js
     healthCheckPath: /api/hello
     envVars:
