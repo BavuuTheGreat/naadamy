@@ -275,8 +275,8 @@ public sealed partial class Game
 
     IEnumerator Controls(bool touch)
     {
-        yield return Say("happy", touch ? "Эхлээд алхаж үзье! Дэлгэц дээр хуруугаа тавиад чирвэл джойстик гарч ирнэ. Очих газраа товшсон ч болно." : "Эхлээд алхаж үзье! WASD эсвэл сум товчоор алхана. Газар дээр дарвал тийшээ очно.",
-            touch ? "Let’s walk first! Put your finger on the screen and drag: a joystick appears. You can also just tap where to go." : "Let’s walk first! Use WASD or the arrow keys. You can also click the ground to walk there.");
+        yield return Say("happy", touch ? "Эхлээд алхаж үзье! Зүүн доод буланд байгаа джойстикоор алхана. Очих газраа товшсон ч болно." : "Эхлээд алхаж үзье! WASD эсвэл сум товчоор алхана. Газар дээр дарвал тийшээ очно.",
+            touch ? "Let’s walk first! Use the joystick at the bottom left to walk. You can also just tap where to go." : "Let’s walk first! Use WASD or the arrow keys. You can also click the ground to walk there.");
         float w0 = walked;
         yield return Goal(Tx2("Алхаж үзээрэй", "Take a walk"), () => walked - w0 >= 6, () => $"{Mathf.Min(6, Mathf.FloorToInt(walked - w0))}/6");
         yield return Say("laugh", "Ёстой гоё! Чи хурдан хөлтэй юм аа!", "Great job! You’ve got quick feet!");

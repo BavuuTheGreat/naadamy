@@ -105,8 +105,8 @@ public sealed partial class Game
         string cardTitle, cardText, cardSrc; bool cardDone = true;
         float lb, lbTo = 1, fade = 1, fadeTo; Color fadeCol = Color.black;
         public bool skipping; Coroutine co; public int lastPick;
-        // controls: a stick on the left half and the stage's buttons
-        public Vector2 stick; int stickId = -999; Vector2 stickO, stickP;
+        // controls: the fixed joystick at the bottom left (GameUI.StickHome) and the stage's buttons
+        public Vector2 stick; int stickId = -999;
         readonly Dictionary<string, Rect> btnRects = new Dictionary<string, Rect>();
         readonly HashSet<string> held = new HashSet<string>(), pressed = new HashSet<string>();
         readonly Dictionary<int, string> pointerBtn = new Dictionary<int, string>();
@@ -222,14 +222,13 @@ public sealed partial class Game
                 if (exitR.Contains(gp)) { g.Later(g.Close); return; }
                 if (skipR.Contains(gp) && stage == null) { skipping = true; Sfx.Tap(); return; }
                 foreach (var kv in btnRects) if (kv.Value.Contains(gp)) { pointerBtn[id] = kv.Key; held.Add(kv.Key); pressed.Add(kv.Key); return; }
-                if (stage != null && gp.x < Screen.width * 0.55f) { stickId = id; stickO = stickP = gp; return; }
+                if (stage != null && line == null && Game.TouchUI && g.NearStick(gp)) { stickId = id; stick = g.StickAt(gp); return; }
                 if (stage == null && line?.choices == null) tapped = true;
                 else if (stage == null && !cardDone) tapped = true;
             }
             if (id == stickId)
             {
-                stickP = gp; float R = 46 * g.UiScale; var d = stickP - stickO; if (d.magnitude > R) { stickO += d - d.normalized * R; d = stickP - stickO; }
-                stick = new Vector2(d.x / R, d.y / R);
+                stick = g.StickAt(gp);
                 if (up) { stickId = -999; stick = Vector2.zero; }
             }
             if (up && pointerBtn.TryGetValue(id, out var b)) { held.Remove(b); pointerBtn.Remove(id); }
@@ -452,14 +451,8 @@ public sealed partial class Game
                 GUI.Label(r, "<b>" + label + "</b>", new GUIStyle(g.sPixel) { fontSize = PxSize(U * (i == 0 ? 13 : 11)), alignment = TextAnchor.MiddleCenter, wordWrap = true, normal = { textColor = Px.Col("#4a2a12") } });
                 btnRects[id] = new Rect(r.x + ox, r.y + oy, r.width, r.height);
             }
-            // the stick, when a thumb is on the left half
-            if (stickId != -999)
-            {
-                float SR = 46 * U; var o = stickO - new Vector2(ox, oy);
-                GUI.DrawTexture(new Rect(o.x - SR, o.y - SR, SR * 2, SR * 2), g.Tex(Disc()), ScaleMode.StretchToFill, true, 0, new Color(1, 1, 1, 0.35f), 0, 0);
-                var k = o + new Vector2(stick.x, stick.y) * SR; float r2 = SR * 0.45f;
-                GUI.DrawTexture(new Rect(k.x - r2, k.y - r2, r2 * 2, r2 * 2), g.Tex(Disc()), ScaleMode.StretchToFill, true, 0, new Color(1, 1, 1, 0.8f), 0, 0);
-            }
+            // the fixed joystick, bottom left (GameUI.StickHome)
+            if (Game.TouchUI && line == null) g.DrawStick(stickId != -999 ? stick : Vector2.zero, 0, new Vector2(ox, oy)); // hidden while someone talks: the box covers it
         }
     }
 }

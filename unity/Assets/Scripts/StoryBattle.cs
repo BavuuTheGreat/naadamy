@@ -118,7 +118,7 @@ public sealed partial class Game
         {
             hintT += Time.deltaTime;
         }
-        string Hint => seg == 0 && hintT < 32 ? (hintT < 6 ? Loc.L(TouchUI ? "Зүүн талд чирж морио жолоод" : "WASD / сумаар морио жолоод", TouchUI ? "Drag on the left to ride" : "Ride with WASD / the arrow keys")
+        string Hint => seg == 0 && hintT < 32 ? (hintT < 6 ? Loc.L(TouchUI ? "Зүүн доорх джойстикоор морио жолоод" : "WASD / сумаар морио жолоод", TouchUI ? "Ride with the joystick at the bottom left" : "Ride with WASD / the arrow keys")
             : hintT < 13 ? Loc.L(TouchUI ? "“Цохих”-ыг 3 удаа дараалан дар: 3 дахь нь хүчтэй" : "E / Space: цохих. 3 удаа дараалан дарвал хүчтэй", TouchUI ? "Tap Strike three times: the third blow is strong" : "E / Space: strike. Three in a row is a strong blow")
             : hintT < 20 ? Loc.L(TouchUI ? "Улаан “!” гарвал “Бултах”-ыг дар" : "Улаан “!” гарвал Shift-ээр булт", TouchUI ? "When a red “!” shows, tap Dodge" : "When a red “!” shows, dodge with Shift")
             : hintT < 26 ? Loc.L(TouchUI ? "“Сум”: исгэрэх сумаа хол руу харва" : "R: исгэрэх сумаа харва", TouchUI ? "Arrow: loose a whistling arrow at enemies far away" : "R: loose a whistling arrow")
