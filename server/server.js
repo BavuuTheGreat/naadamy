@@ -74,6 +74,8 @@ const emailAccounts = require('./email-accounts.js')(roomStore, { dataDir: DATA_
 // player numbers for the owners at /admin (admin-stats.js); off unless ADMIN_KEY is set
 // sign in with Google on any device (google-auth.js); off unless GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are set
 const googleAuth = require('./google-auth.js')(roomStore, arenaStore, { dataDir: DATA_DIR, cloudOf: (id) => getCloudSave(id) });
+// sign in with Apple on iPhone and iPad (apple-auth.js)
+const appleAuth = require('./apple-auth.js')(roomStore, arenaStore, { dataDir: DATA_DIR, cloudOf: (id) => getCloudSave(id) });
 const adminStats = require('./admin-stats.js')({ roomStore, dataDir: DATA_DIR, live: () => ({ ...counts(), rooms: rooms.size }) });
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.webmanifest': 'application/manifest+json', '.json': 'application/json', '.txt': 'text/plain; charset=utf-8', '.png': 'image/png',
@@ -110,6 +112,7 @@ function serveStatic(req, res) {
   if (url.pathname === '/api/email/confirm' || url.pathname === '/api/email/stop') return parentEmail.handle(req, res, url);
   if (adminStats.handle(req, res, url.pathname)) return;
   if (googleAuth.handle(req, res, url)) return;
+  if (url.pathname === '/api/apple') return appleAuth.handle(req, res);
   if (!ROOT || (req.method !== 'GET' && req.method !== 'HEAD')) { res.writeHead(ROOT ? 405 : 404, { 'content-type': 'text/plain; charset=utf-8' }); return res.end(ROOT ? 'Method not allowed' : 'Not found'); }
   let p;
   try { p = decodeURIComponent(url.pathname); } catch { res.writeHead(400); return res.end(); } // a broken %-escape used to throw and stop the server
@@ -1244,6 +1247,7 @@ async function eraseLive(ids) {
   arena.gone(ids);
   await arenaStore.deleteAccounts(ids).catch((error) => console.error('Could not drop erased arena accounts:', error.message)); // PostgreSQL: already gone with their identities
   await googleAuth.forget(ids).catch((error) => console.error('Could not drop erased Google links:', error.message));
+  await appleAuth.forget(ids).catch((error) => console.error('Could not drop erased Apple links:', error.message));
   await emailAccounts.forget(ids).catch((error) => console.error('Could not drop erased email accounts:', error.message));
   for (const connection of [...conns]) {
     if (!connection.player || !gone.has(connection.player.id)) continue;
@@ -1291,6 +1295,7 @@ roomStore.load().then(async (state) => {
   saved = state;
   await arenaStore.init(); // after room-store's tables: accounts belong to player identities
   await googleAuth.init(); // likewise: a Google link belongs to a player identity
+  await appleAuth.init(); // and an Apple one
   await emailAccounts.init(); // and so does an email account
   void voice.init(); // the private Supabase bucket, if missing
   await roomStore.startRealtime(INSTANCE_ID, handleRealtime, () => { // events sent while the listener was down are gone: re-derive erased families and who is online

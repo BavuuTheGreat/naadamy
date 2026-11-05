@@ -442,6 +442,8 @@ public sealed partial class Game
                 g.Later(() => { tab = "family"; famStep = 0; err = ""; sel.Clear(); });
             if (GUILayout.Button("<u>" + Loc.L("Email-ээр нэвтрэх", "Log in with email") + "</u>", new GUIStyle(g.sCenter) { fontSize = Mathf.RoundToInt(g.U(14)), normal = { textColor = Color.white } }))
                 g.Later(() => g.Open(new EmailLoginModal()));
+            if (AppleApi.Available && GUILayout.Button("<u>" + Loc.L("Apple-ээр нэвтрэх", "Sign in with Apple") + "</u>", new GUIStyle(g.sCenter) { fontSize = Mathf.RoundToInt(g.U(14)), normal = { textColor = Color.white } }))
+                g.Later(() => g.Open(new AppleModal("login", g.EnterWithAccount)));
             if (GUILayout.Button("<u>" + Loc.L("Google-ээр нэвтрэх", "Sign in with Google") + "</u>", new GUIStyle(g.sCenter) { fontSize = Mathf.RoundToInt(g.U(14)), normal = { textColor = Color.white } }))
                 g.Later(() => g.Open(new GoogleModal("login", g.EnterWithGoogle)));
             if (GUILayout.Button("<u>" + Loc.L("Төслийн тухай", "About the project") + "</u>", new GUIStyle(g.sCenter) { fontSize = Mathf.RoundToInt(g.U(14)), normal = { textColor = Color.white } })) g.Later(() => g.Open(new AboutPage()));
