@@ -120,22 +120,6 @@ public sealed partial class Game
         }
     }
 
-    /** A Google login on this device: the player it is linked to comes here (as an arena login does) and the game enters it. */
-    public void EnterWithGoogle(J r)
-    {
-        string server = Family.ServerOf(this, V), pid = r["id"].S;
-        string who = !string.IsNullOrEmpty(r["username"].S) ? r["username"].S : !string.IsNullOrEmpty(r["name"].S) ? r["name"].S : Loc.L("Тоглогч", "Player");
-        if (V != null && pid == V.id) { V.ticket = r["ticket"].S; V.Save(); Toast(Loc.L("Google-ээр нэвтэрлээ.", "Signed in with Google.")); return; }
-        bool known = App.profiles.Contains(pid);
-        var p = SaveData.Load(pid);
-        if (!known) { p.name = Clean(who); p.created = SaveData.DayKey(); }
-        p.ticket = r["ticket"].S;
-        Cloud.Apply(p, r["cloud"]);
-        if (string.IsNullOrWhiteSpace(p.server)) p.server = server.Trim();
-        p.Save();
-        if (!known) App.profiles.Add(pid);
-        App.server = server.Trim(); App.Save();
-        Toast(Loc.L($"{p.name} болж нэвтэрлээ.", $"Signed in as {p.name}."));
-        Later(() => Enter(p));
-    }
+    /** A Google login on this device: the player it is linked to comes here, as an email login does (EmailAccount.cs). */
+    public void EnterWithGoogle(J r) => EnterWithAccount(r);
 }

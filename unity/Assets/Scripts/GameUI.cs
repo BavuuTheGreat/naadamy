@@ -796,6 +796,14 @@ public sealed partial class Game
         if (string.IsNullOrEmpty(v)) GUI.Label(r, hint, new GUIStyle(sField) { normal = { background = null, textColor = Px.Col("#a8957e") } });
         return v;
     }
+    /** Field, for a password: shows dots. */
+    public string PassField(string v, int max, string hint)
+    {
+        var r = GUILayoutUtility.GetRect(U(100), U(56), GUILayout.ExpandWidth(true));
+        v = GUI.PasswordField(r, v, '•', max, sField);
+        if (string.IsNullOrEmpty(v)) GUI.Label(r, hint, new GUIStyle(sField) { normal = { background = null, textColor = Px.Col("#a8957e") } });
+        return v;
+    }
     /** The app's logo, as the web version's blue tile with the ger. */
     public void Logo(Rect r) { GUI.Box(r, GUIContent.none, sLogo); GUI.DrawTexture(new Rect(r.x + r.width * 0.14f, r.y + r.height * 0.12f, r.width * 0.72f, r.height * 0.72f), Tex(Px.Icon("ui:logo")), ScaleMode.ScaleToFit); }
     /** The step bar along the top of a card: green for the steps done. */
