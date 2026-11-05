@@ -108,6 +108,10 @@ if (process.env.ARENA_TEST_DATABASE_URL) {
   const store = createArenaStore({ pool: roomStore.pool });
   await store.init();
   await store.init(); // twice: the server restarts
+  const open = await roomStore.pool.query(`SELECT relname FROM pg_class WHERE relname = ANY($1::text[]) AND NOT relrowsecurity`,
+    [['naadamy_accounts', 'naadamy_friends', 'naadamy_arena_stats', 'naadamy_arena_matches']]);
+  assert.deepEqual(open.rows, [], 'row level security on every arena table (closed to the Supabase REST API)');
+  ok('PostgreSQL: row level security is on for every arena table');
   await suite('PostgreSQL', roomStore, store);
   // two players taking one name at the same moment: exactly one gets it
   const x = 'race-' + crypto.randomBytes(4).toString('hex'), y = 'race-' + crypto.randomBytes(4).toString('hex');

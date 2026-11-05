@@ -294,6 +294,12 @@ function pgStore(pool) {
         `);
         await client.query('DROP TRIGGER IF EXISTS naadamy_accounts_forget ON naadamy_accounts');
         await client.query('CREATE TRIGGER naadamy_accounts_forget AFTER DELETE ON naadamy_accounts FOR EACH ROW EXECUTE FUNCTION naadamy_forget_account_matches()');
+        // Supabase serves every public table over its REST API to anyone with the project's anon key: without row level
+        // security that would show usernames, password hashes and friends to the world. RLS with no policies closes it, as
+        // room-store.js does for its tables; the server connects as the tables' owner, which RLS does not apply to.
+        for (const table of ['naadamy_accounts', 'naadamy_friends', 'naadamy_arena_stats', 'naadamy_arena_matches']) {
+          await client.query(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`);
+        }
         await client.query('COMMIT');
       } catch (error) {
         await client.query('ROLLBACK').catch(() => {});
