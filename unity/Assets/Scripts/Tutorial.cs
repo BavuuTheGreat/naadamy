@@ -60,8 +60,8 @@ public sealed partial class Game
         bool guide = d.who != "basar";
         float k = Mathf.Clamp(AtLeastCss(16, 15) / 16, 1, 2.6f); // on a phone the box, its words and its answers grow to a readable size
         float w = Mathf.Min(vw - 16, 720 * k), pad = 12 * k, pic = (guide ? 112 : 72) * Mathf.Min(k, 1.5f), tx = pad * 2 + pic, tw = w - tx - pad;   // Bolormaa's 112×144 reference portrait
-        var st = new GUIStyle(sPixel) { wordWrap = true, alignment = TextAnchor.UpperLeft, fontSize = PxSize(U(16 * k)), normal = { textColor = Color.white } }; // the story box is pixel text, as on the web
-        var opt = k > 1 ? new GUIStyle(sOpt) { fontSize = PxSize(sOpt.fontSize * k) } : sOpt;
+        var st = new GUIStyle(sLabel) { wordWrap = true, alignment = TextAnchor.UpperLeft, fontSize = Mathf.RoundToInt(U(TALK * k)), normal = { textColor = Color.white } }; // NPC talk reads in the body font at TALK (GameUI.cs)
+        var opt = k > 1 ? new GUIStyle(sOpt) { fontSize = Mathf.RoundToInt(sOpt.fontSize * k) } : sOpt;
         float line = 24 * k, th = st.CalcHeight(new GUIContent(d.text), U(tw)) / UiScale, n = d.choices != null ? d.choices.Length : 0, oht = 0;
         for (int i = 0; i < n; i++) oht += Mathf.Max(40 * k, opt.CalcHeight(new GUIContent(d.choices[i]), U(tw)) / UiScale) + 6 * k; // an answer grows to fit its (often long) words
         float h = Mathf.Max(guide ? pic * 72 / 56f + pad * 2 : pic + pad * 2, pad + line + th + (n > 0 ? 8 * k + oht : 18 * k) + pad);
