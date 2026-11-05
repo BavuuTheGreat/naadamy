@@ -399,7 +399,7 @@ public sealed partial class Game
         void DrawLine(Game g, Line l, float vw, float vh)
         {
             float U = g.UiScale, w = Mathf.Min(vw - 20, 760), pic = Mathf.Min(120, vh * 0.26f), pad = 14, tx = pic + pad * 2, tw = w - tx - pad;
-            var st = new GUIStyle(g.sLabel) { fontSize = Mathf.RoundToInt(U * 17), wordWrap = true, normal = { textColor = new Color(1, 0.97f, 0.9f) } };
+            var st = new GUIStyle(g.sLabel) { fontSize = Mathf.RoundToInt(U * Game.TALK), wordWrap = true, normal = { textColor = new Color(1, 0.97f, 0.9f) } };
             float th = st.CalcHeight(new GUIContent(l.text), tw * U) / U, n = l.choices?.Length ?? 0, oht = 0;
             for (int i = 0; i < n; i++) oht += Mathf.Max(38, g.sOpt.CalcHeight(new GUIContent(l.choices[i]), tw * U) / U) + 6; // an answer grows to fit its words
             float h = Mathf.Max(pic * 0.72f + pad, pad + 26 + th + (n > 0 ? 10 + oht : 20) + pad), x = vw / 2 - w / 2, y = vh - h - 10;

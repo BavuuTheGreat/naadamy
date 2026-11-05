@@ -116,6 +116,7 @@ public sealed partial class Game
     /** Phones and tablets get on-screen buttons and touch hints; a computer uses the keys Bolormaa teaches. */
     public static bool TouchUI => Application.isMobilePlatform;
     float builtFor = -1;
+    public const float TALK = 16; // every NPC line (story box, bubbles, teachers, walk-scene notes, task givers) reads at this size
     public GUIStyle sSpeech, sPanel, sBtn, sPrimary, sLabel, sTitle, sSmall, sChip, sChipText, sToast, sCenter, sTag, sBig, sOpt, sSel, sPixel, sTeach, sKicker, sNote, sSlot, sChipHi, sWhite, sNav, sNavOn, sTabOff, sField, sTile, sLogo;
     Texture2D white;
     readonly Dictionary<PxCanvas, Texture2D> texCache = new Dictionary<PxCanvas, Texture2D>();
@@ -174,9 +175,9 @@ public sealed partial class Game
         sPop = Style(Frame("#fffaf0", new[] { ("#5a2d10", 2), ("#f7c98a", 2) }, 4, "#8a4b1f", 3, u), null, bodyFont, T(15), ink, TextAnchor.MiddleLeft, true);
         sPopBasar = Style(Frame("#fff3c4", new[] { ("#5a2d10", 2), ("#e5a157", 3) }, 4, "#8a4b1f", 3, u), null, bodyFont, T(15), ink, TextAnchor.MiddleLeft, true);
         sPopHungry = Style(Frame("#ffe9dc", new[] { ("#6b1f17", 2), ("#f08a6e", 3) }, 4, "#a33a2a", 3, u), null, bodyFont, T(15), ink, TextAnchor.MiddleLeft, true);
-        sPopText = new GUIStyle { font = bodyFont, fontSize = T(15), wordWrap = true, richText = true, alignment = TextAnchor.MiddleLeft, normal = { textColor = ink } };
+        sPopText = new GUIStyle { font = bodyFont, fontSize = T(TALK), wordWrap = true, richText = true, alignment = TextAnchor.MiddleLeft, normal = { textColor = ink } };
         sPopWho = new GUIStyle { font = pixelFont, fontSize = F(10), alignment = TextAnchor.LowerLeft, normal = { textColor = Px.Col("#a8641e") } };
-        sOpt = Style(Frame("#08060e", Ring("#ffffff", 3), 0, null, 0, u), Frame("#08060e", Ring("#f7c646", 3), 0, null, 0, u), pixelFont, F(14), paper, TextAnchor.MiddleLeft, true); // an answer in the story box
+        sOpt = Style(Frame("#08060e", Ring("#ffffff", 3), 0, null, 0, u), Frame("#08060e", Ring("#f7c646", 3), 0, null, 0, u), bodyFont, T(TALK), paper, TextAnchor.MiddleLeft, true); // an answer in the story box
         sTag = Style(Frame("#fbe8c2", Ring("#c99a5a", 2), 0, null, 0, u), null, pixelFont, F(10), ink, TextAnchor.MiddleCenter); sTag.padding = new RectOffset(T(6), T(6), T(2), T(2));
         sLabel = new GUIStyle { font = bodyFont, fontSize = T(15), wordWrap = true, richText = true, normal = { textColor = ink } };
         sSmall = new GUIStyle(sLabel) { fontSize = T(13), normal = { textColor = Px.Col("#7a5432") } };
@@ -184,7 +185,7 @@ public sealed partial class Game
         sBig = new GUIStyle(sTitle) { fontSize = T(34), alignment = TextAnchor.MiddleCenter };
         sCenter = new GUIStyle(sLabel) { alignment = TextAnchor.MiddleCenter };
         sPixel = new GUIStyle(sCenter) { font = pixelFont, wordWrap = false }; // the village's labels, as the web version draws them in Tiny5
-        sTeach = Style(Frame("#fffaf0", Ring("#c99a5a", 2), 0, null, 0, u), null, bodyFont, T(15), ink, TextAnchor.UpperLeft, true); sTeach.padding = new RectOffset(T(12), T(12), T(8), T(8)); // what a person says, in a speech box
+        sTeach = Style(Frame("#fffaf0", Ring("#c99a5a", 2), 0, null, 0, u), null, bodyFont, T(TALK), ink, TextAnchor.UpperLeft, true); sTeach.padding = new RectOffset(T(12), T(12), T(8), T(8)); // what a person says, in a speech box
         sKicker = new GUIStyle(sLabel) { fontSize = T(12), normal = { textColor = Px.Col("#6b7280") } }; // the small grey line above a heading
         sChipHi = Style(Frame("#fff3c4", new[] { ("#e5a157", 2), ("#8a4b1f", 2) }, 4, "#5a2d10", 4, u), null, pixelFont, F(11), ink, TextAnchor.MiddleLeft); // Basar's button stands out (.v-basar)
         // the app's own pages (the web version's shell): white chips and a white tab bar on a warm grey page
@@ -197,7 +198,7 @@ public sealed partial class Game
         sLogo = Style(Frame("#2f6bff", new (string, int)[0], 6, null, 0, u), null, bodyFont, T(12), ink, TextAnchor.MiddleCenter);
         sSlot = Style(Frame("#e6c48a", Ring("#c99a5a", 2), 0, null, 0, u), null, pixelFont, F(11), ink, TextAnchor.MiddleCenter);
         sNote = new GUIStyle(sChip) { font = bodyFont, fontSize = T(14), wordWrap = true, alignment = TextAnchor.MiddleCenter }; // a parchment box over a scene: its title, a hint
-        sSpeech = new GUIStyle(sNote) { fontSize = T(12), padding = new RectOffset(T(10), T(10), T(6), T(8)) }; // what someone says, in a bubble (SpeechBubble)
+        sSpeech = new GUIStyle(sNote) { fontSize = T(TALK), padding = new RectOffset(T(10), T(10), T(6), T(8)) }; // what someone says, in a bubble (SpeechBubble)
     }
     public float U(float v) => v * UiScale;
     /** The layout is scaled to fit 900 units across, so on a phone held upright small type turns tiny: this many units, but at

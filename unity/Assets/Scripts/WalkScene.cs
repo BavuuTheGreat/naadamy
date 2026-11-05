@@ -105,7 +105,7 @@ public sealed partial class Game
             var tr = g.URect(64, 8, Mathf.Min(360, sw2 - 72), 44); GUI.Box(tr, $"<b>{title}</b>" + (sub != null ? $"  <size={g.Ts(11)}>{sub}</size>" : ""), g.sNote);
             if (!string.IsNullOrEmpty(info))   // what is said here, in a box as tall as the words
             {
-                var ist = new GUIStyle(g.sNote) { alignment = TextAnchor.MiddleLeft, fontSize = g.Ts(12), wordWrap = true }; float iw = Mathf.Min(520, sw2 - 16), ih = Mathf.Max(48, ist.CalcHeight(new GUIContent(info), g.U(iw)) / g.UiScale + 4);
+                var ist = new GUIStyle(g.sNote) { alignment = TextAnchor.MiddleLeft, fontSize = Mathf.RoundToInt(g.UiScale * Game.TALK), wordWrap = true }; float iw = Mathf.Min(520, sw2 - 16), ih = Mathf.Max(48, ist.CalcHeight(new GUIContent(info), g.U(iw)) / g.UiScale + 4);
                 var ir = g.URect(8, sh - 68 - ih, iw, ih); g.UiAdd(ir); GUI.Box(ir, info, ist);
             }
             float bx = 8;
