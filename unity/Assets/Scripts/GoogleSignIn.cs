@@ -2,7 +2,8 @@
 // log in with it from the sign-in page and get the same player (coins, XP, clothes, cloud save).
 // The same way on every platform: the server gives Google's address and a short code; the game opens the address in a
 // browser, shows the code, and asks the server every 2 seconds until the Google page's Confirm (which shows the same code)
-// is pressed. See the comment at the top of server/google-auth.js.
+// is pressed. On Android the phone's own account picker is used instead (one tap, no browser:
+// Plugins/Android/NaadamyOneTap.androidlib), with the browser kept as the way out if it can't. See server/google-auth.js.
 using System;
 using System.Collections;
 using System.Text;
@@ -41,6 +42,7 @@ public static class GoogleApi
             case "cancelled": return Loc.L("Цуцлагдлаа.", "Cancelled.");
             case "expired": return Loc.L("Хугацаа дууслаа. Дахин оролдоорой.", "That took too long. Try again.");
             case "google": case "unverified": return Loc.L("Google бүртгэлийг шалгаж чадсангүй.", "Could not check the Google account.");
+            case "invalid": return Loc.L("Алдаатай хүсэлт. Тоглоомоо шинэчлээд дахин оролдоорой.", "A bad request. Update the game and try again.");
             case "busy": return Loc.L("Хэт олон хүсэлт. Түр хүлээгээрэй.", "Too many requests. Wait a moment.");
             case "offline": case "no-server": return Loc.L("Сервертэй холбогдож чадсангүй.", "Could not reach the server.");
             default: return Loc.L("Алдаа гарлаа. Дахин оролдоорой.", "Something went wrong. Try again.");
@@ -54,20 +56,26 @@ public sealed partial class Game
     [System.Runtime.InteropServices.DllImport("__Internal")] static extern void NaadamyOpenOnRelease(string url); // Plugins/WebGL/NaadamyPointer.jslib
 #endif
 
-    /** Google's sign-in in a browser, then waiting for the Confirm there. mode "link" (this player) or "login" (this device). */
+    /** Google's sign-in: on Android the phone's account picker; elsewhere (or if that can't) a browser, then waiting for the
+     *  Confirm there. mode "link" (this player) or "login" (this device). */
     public sealed class GoogleModal : Modal
     {
         readonly string mode; readonly Action<J> onDone;
-        string step = "", url, poll, code, err = ""; bool busy, opened; float pollAt; Rect openRect;
+        string step = "", url, poll, code, err = ""; bool busy, opened, browser; float pollAt; Rect openRect;
+        // the Android picker answers on another thread: kept here under the lock, read in Tick
+        readonly object tapLock = new object(); string tapToken, tapError; bool tapAnswered;
         public GoogleModal(string mode, Action<J> onDone) { this.mode = mode; this.onDone = onDone; }
         public override void Press(Game g) { }
+        string Who(Game g) => mode == "link" ? ",\"id\":" + J.Quote(g.V.id) + ",\"ticket\":" + J.Quote(g.V.ticket) : "";
 
         void Begin(Game g)
         {
+            if (mode == "link") SaveData.EnsureTicket(g.V);
+#if UNITY_ANDROID && !UNITY_EDITOR
+            if (!browser) { BeginTap(g); return; }
+#endif
             step = "start"; err = ""; opened = false;
-            string body = "{\"act\":\"start\",\"mode\":" + J.Quote(mode);
-            if (mode == "link") { SaveData.EnsureTicket(g.V); body += ",\"id\":" + J.Quote(g.V.id) + ",\"ticket\":" + J.Quote(g.V.ticket); }
-            g.StartCoroutine(GoogleApi.Post(Family.ServerOf(g, g.V), body + "}", r =>
+            g.StartCoroutine(GoogleApi.Post(Family.ServerOf(g, g.V), "{\"act\":\"start\",\"mode\":" + J.Quote(mode) + Who(g) + "}", r =>
             {
                 if (g.modal != this) return;
                 if (!r["ok"].B) { err = GoogleApi.Why(r); step = "error"; Sfx.Bad(); return; }
@@ -75,8 +83,59 @@ public sealed partial class Game
             }));
         }
 
+#if UNITY_ANDROID && !UNITY_EDITOR
+        sealed class TapCallback : AndroidJavaProxy
+        {
+            readonly GoogleModal m;
+            public TapCallback(GoogleModal m) : base("com.pineconeacademy.naadamy.onetap.OneTapCallback") { this.m = m; }
+            public void onResult(string idToken, string error) { lock (m.tapLock) { m.tapToken = idToken ?? ""; m.tapError = error ?? ""; m.tapAnswered = true; } }
+        }
+        /** A one-time nonce from the server, then the phone's account picker with it. */
+        void BeginTap(Game g)
+        {
+            step = "tap"; err = ""; lock (tapLock) tapAnswered = false;
+            g.StartCoroutine(GoogleApi.Post(Family.ServerOf(g, g.V), "{\"act\":\"nonce\"}", r =>
+            {
+                if (g.modal != this) return;
+                if (!r["ok"].B) { err = GoogleApi.Why(r); step = "error"; Sfx.Bad(); return; }
+                try
+                {
+                    using (var player = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
+                    using (var activity = player.GetStatic<AndroidJavaObject>("currentActivity"))
+                    using (var oneTap = new AndroidJavaClass("com.pineconeacademy.naadamy.onetap.OneTap"))
+                        oneTap.CallStatic("signIn", activity, r["clientId"].S, r["nonce"].S, new TapCallback(this));
+                }
+                catch (Exception e) { Debug.LogWarning("Google one-tap: " + e.Message); browser = true; Begin(g); } // no picker on this phone: the browser
+            }));
+        }
+        /** The picker answered: send the token to the server, or say why not. */
+        void TapAnswered(Game g)
+        {
+            string token, why;
+            lock (tapLock) { if (!tapAnswered) return; tapAnswered = false; token = tapToken; why = tapError; }
+            if (string.IsNullOrEmpty(token))
+            {
+                if (why != "cancelled" && why != "no-account") Debug.LogWarning("Google one-tap: " + why);
+                err = why == "cancelled" ? Loc.L("Цуцлагдлаа.", "Cancelled.")
+                    : why == "no-account" ? Loc.L("Энэ утсанд Google бүртгэл алга. Browser-ээр нэвтэрч болно.", "There's no Google account on this phone. You can use the browser instead.")
+                    : Loc.L("Утасны Google нэвтрэлт ажилласангүй. Browser-ээр нэвтэрч болно.", "The phone's Google sign-in didn't work. You can use the browser instead.");
+                step = "error"; return;
+            }
+            step = "start";
+            g.StartCoroutine(GoogleApi.Post(Family.ServerOf(g, g.V), "{\"act\":\"native\",\"mode\":" + J.Quote(mode) + ",\"idToken\":" + J.Quote(token) + Who(g) + "}", r =>
+            {
+                if (g.modal != this) return;
+                if (!r["ok"].B) { err = GoogleApi.Why(r); step = "error"; Sfx.Bad(); return; }
+                step = "done"; Sfx.Win(); g.Close(); onDone(r);
+            }));
+        }
+#endif
+
         public override void Tick(Game g, float dt)
         {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            if (step == "tap") { TapAnswered(g); return; }
+#endif
             if (step != "open" || busy || Time.realtimeSinceStartup < pollAt) return;
             busy = true;
             g.StartCoroutine(GoogleApi.Post(Family.ServerOf(g, g.V), "{\"act\":\"poll\",\"poll\":" + J.Quote(poll) + "}", r =>
@@ -95,10 +154,14 @@ public sealed partial class Game
             var center = new GUIStyle(g.sLabel) { alignment = TextAnchor.MiddleCenter, wordWrap = true };
             GUILayout.Label(mode == "link" ? Loc.L("Google бүртгэл холбох", "Link a Google account") : Loc.L("Google-ээр нэвтрэх", "Sign in with Google"), new GUIStyle(g.sTitle) { alignment = TextAnchor.MiddleCenter });
             if (step == "start") g.Text(Loc.L("Түр хүлээнэ үү…", "One moment…"));
+            else if (step == "tap") g.Text(Loc.L("Google бүртгэлээ сонгоно уу…", "Pick your Google account…"));
             else if (step == "error")
             {
                 g.Text("<color=#e14b3d>" + err + "</color>");
                 if (g.Btn(Loc.L("Дахин оролдох", "Try again"), true, 40)) g.Later(() => Begin(g));
+#if UNITY_ANDROID && !UNITY_EDITOR
+                if (!browser && g.Btn(Loc.L("Browser-ээр нэвтрэх", "Use the browser instead"), false, 36)) g.Later(() => { browser = true; Begin(g); });
+#endif
             }
             else if (step == "open")
             {

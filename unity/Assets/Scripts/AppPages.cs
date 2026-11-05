@@ -52,6 +52,8 @@ public sealed partial class Game
         string server;
         // the Google account linked to this player (GoogleSignIn.cs): asked once when the window opens
         bool gAsked, gKnown, gOff, gBusy; string gEmail = "", gErr = "";
+        // the Apple ID linked to this player (AppleSignIn.cs), on iPhone and iPad only
+        bool aAsked, aKnown, aLinked, aBusy; string aEmail = "", aErr = "";
         public override void Draw(Game g)
         {
             server ??= g.V.server;
@@ -75,6 +77,7 @@ public sealed partial class Game
             if (GUILayout.Button(g.StoryMode ? Loc.L("Түүхийн горим", "Story mode") : Loc.L("Чөлөөт горим", "Free roam"), g.sBtn, GUILayout.MinHeight(g.U(36)))) { g.App.gameMode = g.StoryMode ? "roam" : "story"; g.App.Save(); }
             GUILayout.EndHorizontal();
             Google(g);
+            if (AppleApi.Available) Apple(g);
             GUILayout.Label("<b>" + Loc.L("Басар AI (Claude)", "Basar AI (Claude)") + "</b>", g.sLabel);
             g.Small(Loc.L("Компьютер дээр “node server/server.js” ажиллуулж, түүний хаягийг энд бичвэл Басар AI ухаантай болно (ж: 192.168.1.10:8000). Хоосон бол офлайн мэдлэгээр ажиллана.", "Run “node server/server.js” on a computer and write its address here to give Basar AI smarts (e.g. 192.168.1.10:8000). Empty: offline knowledge."));
             GUILayout.BeginHorizontal();
@@ -88,6 +91,43 @@ public sealed partial class Game
             if (g.Btn(Loc.L("Хаах", "Close"), true, 36)) g.Later(g.Close);
         }
         public override void Press(Game g) { }
+        void Apple(Game g)
+        {
+            GUILayout.Label("<b>Apple ID</b>", g.sLabel);
+            string who = "\"id\":" + J.Quote(g.V.id) + ",\"ticket\":" + J.Quote(g.V.ticket);
+            if (!aAsked)
+            {
+                aAsked = true; SaveData.EnsureTicket(g.V);
+                g.StartCoroutine(AppleApi.Post(Family.ServerOf(g, g.V), "{\"act\":\"me\"," + who + "}", r =>
+                {
+                    aKnown = true; aErr = r["ok"].B ? "" : AppleApi.Why(r);
+                    aLinked = r["linked"].B; aEmail = r["email"].S ?? "";
+                }));
+            }
+            if (!aKnown) { g.Small(Loc.L("Шалгаж байна…", "Checking…")); return; }
+            if (aErr != "") { g.Small("<color=#e14b3d>" + aErr + "</color>"); return; }
+            if (aLinked)
+            {
+                GUILayout.BeginHorizontal(); g.Small(Loc.L("Холбогдсон", "Linked") + (aEmail != "" ? ": <b>" + aEmail + "</b>" : "")); GUILayout.FlexibleSpace();
+                if (g.SmallBtn(Loc.L("Салгах", "Unlink"), false, 96, !aBusy)) g.Later(() =>
+                {
+                    aBusy = true;
+                    g.StartCoroutine(AppleApi.Post(Family.ServerOf(g, g.V), "{\"act\":\"unlink\"," + who + "}", r =>
+                    {
+                        aBusy = false;
+                        if (r["ok"].B) { aLinked = false; aEmail = ""; g.Toast(Loc.L("Apple ID-г салгалаа.", "Apple ID unlinked.")); } else g.Toast(AppleApi.Why(r));
+                    }));
+                });
+                GUILayout.EndHorizontal();
+                return;
+            }
+            g.Small(Loc.L("Холбовол өөр iPhone, iPad дээр Apple-ээр нэвтэрч, зоос, XP, хувцсаа авч болно.", "Link it to sign in with Apple on another iPhone or iPad and keep your coins, XP and clothes."));
+            if (g.Btn(Loc.L("Apple ID холбох", "Link an Apple ID"), false, 36)) g.Later(() => g.Open(new AppleModal("link", r =>
+            {
+                aLinked = true; aEmail = r["email"].S ?? ""; g.Confetti(30);
+                g.Toast(Loc.L("Apple ID холбогдлоо!", "Apple ID linked!"));
+            })));
+        }
         void Google(Game g)
         {
             GUILayout.Label("<b>" + Loc.L("Google бүртгэл", "Google account") + "</b>", g.sLabel);

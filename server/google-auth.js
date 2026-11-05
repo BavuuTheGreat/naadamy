@@ -13,7 +13,13 @@
    (gone with the identity), else google.json in DATA_DIR. Sign-ins in progress live in memory for 10 minutes, so this
    assumes one server instance (as on Render). Off unless GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are set.
    The address Google sends the browser back to is PUBLIC_URL + /api/google/callback; it must be listed in the Google
-   Cloud Console as an authorized redirect URI. */
+   Cloud Console as an authorized redirect URI.
+
+   On Android the game can skip the browser: { act: 'nonce' } gives a one-time nonce and the web client id, the phone's
+   own Google account picker (Credential Manager, one tap) returns an ID token for them, and { act: 'native', idToken }
+   links or logs in with it. That token comes from the phone, not from Google's token endpoint, so its RS256 signature is
+   checked against Google's published keys, and its nonce must be one this server gave out in the last 10 minutes and
+   not used yet. No confirm page is needed: the token was made on the player's own phone for this sign-in. */
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -47,6 +53,22 @@ function readIdToken(idToken, clientId, now) {
   if (claims.email_verified !== true && claims.email_verified !== 'true') return null;
   if (typeof claims.email !== 'string' || claims.email.length > 254) return null;
   return { sub: claims.sub, email: claims.email, name: typeof claims.given_name === 'string' ? claims.given_name.slice(0, 40) : '' };
+}
+
+/** An ID token's claims after checking its RS256 signature with Google's keys ({ kid: KeyObject }), then as readIdToken. */
+function verifyIdToken(idToken, keys, clientId, now) {
+  const parts = String(idToken || '').split('.');
+  if (parts.length !== 3) return null;
+  let header;
+  try { header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8')); } catch { return null; }
+  if (!header || header.alg !== 'RS256' || typeof header.kid !== 'string' || !Object.hasOwn(keys, header.kid)) return null;
+  const signed = crypto.verify('RSA-SHA256', Buffer.from(`${parts[0]}.${parts[1]}`), keys[header.kid], Buffer.from(parts[2], 'base64url'));
+  if (!signed) return null;
+  const claims = readIdToken(idToken, clientId, now);
+  if (!claims) return null;
+  let nonce = '';
+  try { nonce = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')).nonce || ''; } catch { /* read above */ }
+  return { ...claims, nonce: typeof nonce === 'string' ? nonce : '' };
 }
 
 // ---------------------------------------------------------------- where links are kept
@@ -105,6 +127,8 @@ module.exports = function createGoogleAuth(roomStore, arenaStore, { dataDir, clo
   const redirectUri = `${base}/api/google/callback`;
   const links = roomStore.kind === 'postgres' && roomStore.pool ? pgLinks(roomStore.pool) : jsonLinks(dataDir);
   const byState = new Map(), byPoll = new Map();
+  const nonces = new Map(); // one-time nonces for Android's one-tap sign-in: nonce -> when it was given
+  let googleKeys = { keys: {}, until: 0 }; // Google's signing keys, kept as long as Google says (Cache-Control max-age)
   const hits = new Map();
 
   function allow(ip) {
@@ -156,6 +180,48 @@ module.exports = function createGoogleAuth(roomStore, arenaStore, { dataDir, clo
     if (!(await playerOk(id, ticket))) return { ok: false, reason: 'identity' };
     const link = await links.byPlayer(id);
     return { ok: true, enabled, email: link ? link.email : null };
+  }
+
+  /** Google's signing keys, fetched again when they run out or a token names a key not known yet. */
+  async function signingKeys(kid) {
+    if (googleKeys.until > now() && Object.hasOwn(googleKeys.keys, kid)) return googleKeys.keys;
+    const answer = await fetch('https://www.googleapis.com/oauth2/v3/certs', { signal: AbortSignal.timeout(10_000) });
+    const body = await answer.json().catch(() => null);
+    if (!answer.ok || !body || !Array.isArray(body.keys)) throw new Error(`Google's keys answered ${answer.status}`);
+    const keys = {};
+    for (const jwk of body.keys) if (jwk && jwk.kty === 'RSA' && typeof jwk.kid === 'string') { try { keys[jwk.kid] = crypto.createPublicKey({ key: jwk, format: 'jwk' }); } catch { /* skip a bad key */ } }
+    const maxAge = Number((/max-age=(\d+)/.exec(answer.headers && answer.headers.get ? answer.headers.get('cache-control') || '' : '') || [])[1]) || 3600;
+    googleKeys = { keys, until: now() + Math.min(maxAge, 86400) * 1000 };
+    return keys;
+  }
+  /** A one-time nonce for Android's one-tap sign-in, with the web client id the phone asks Google for a token for. */
+  async function nonce() {
+    if (!enabled) return { ok: false, reason: 'off' };
+    const t = now();
+    for (const [n, at] of nonces) if (t - at > PENDING_MS) nonces.delete(n);
+    if (nonces.size >= PENDING_MAX) return { ok: false, reason: 'busy' };
+    const value = crypto.randomBytes(24).toString('base64url');
+    nonces.set(value, t);
+    return { ok: true, nonce: value, clientId };
+  }
+  /** Android's one-tap: an ID token made on the phone, checked here, then linked or logged in as on the Confirm page. */
+  async function native(message) {
+    if (!enabled) return { ok: false, reason: 'off' };
+    const mode = message.mode === 'link' ? 'link' : message.mode === 'login' ? 'login' : '';
+    const idToken = String(message.idToken || '');
+    if (!mode || idToken.length > 4096) return { ok: false, reason: 'invalid' };
+    const id = String(message.id || ''), ticket = String(message.ticket || '');
+    if (mode === 'link' && !(await playerOk(id, ticket))) return { ok: false, reason: 'identity' };
+    let header = null;
+    try { header = JSON.parse(Buffer.from(idToken.split('.')[0], 'base64url').toString('utf8')); } catch { /* checked below */ }
+    if (!header || typeof header.kid !== 'string') return { ok: false, reason: 'unverified' };
+    const google = verifyIdToken(idToken, await signingKeys(header.kid), clientId, now());
+    if (!google) return { ok: false, reason: 'unverified' };
+    const given = nonces.get(google.nonce);
+    if (!google.nonce || given === undefined || now() - given > PENDING_MS) return { ok: false, reason: 'expired' };
+    nonces.delete(google.nonce); // once
+    const { result, reason } = await finish({ mode, id, google });
+    return result ? { ok: true, status: 'done', ...result } : { ok: false, reason };
   }
 
   async function unlink(message) {
@@ -252,7 +318,7 @@ button{font:inherit;font-weight:600;border:0;border-radius:10px;padding:12px 18p
     });
   }
 
-  const ACTS = { start, poll, me, unlink };
+  const ACTS = { start, poll, me, unlink, nonce, native };
   /** Answers /api/google, /api/google/callback and /api/google/confirm; false for any other path. */
   function handle(req, res, url) {
     const json = (status, body) => { res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }); res.end(JSON.stringify(body)); };
@@ -283,3 +349,4 @@ button{font:inherit;font-weight:600;border:0;border-radius:10px;padding:12px 18p
   return { handle, init: () => links.init(), forget: (ids) => links.forget(ids), enabled };
 };
 module.exports.readIdToken = readIdToken;
+module.exports.verifyIdToken = verifyIdToken;
