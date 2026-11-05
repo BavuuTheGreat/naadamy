@@ -394,6 +394,8 @@ public sealed partial class Game
         string tab; SaveData picking; readonly List<int> sel = new List<int>(); bool shake;
         // registering
         int step; string name = "", err = "", ageText = ""; int age = 8, avatar; readonly Live live = new Live(160, 90);
+        // the last step: an email and a password (EmailAccount.cs); the profile is made once, kept here while the server answers
+        string pics = "", email = "", pass = "", pass2 = ""; bool sending; SaveData made;
         // logging in with the family code: the code (and server), then which child, then their pictures
         int famStep; string famCode = "", famServer; bool busy; List<J> members = new List<J>(); J member;
         public AuthPage() { tab = I.App.profiles.Count > 0 ? "login" : "register"; }
@@ -438,6 +440,8 @@ public sealed partial class Game
             g.Gap(8);
             if (tab != "family" && GUILayout.Button("<u>" + Loc.L("Гэр бүлийн кодоор нэвтрэх", "Log in with a family code") + "</u>", new GUIStyle(g.sCenter) { fontSize = Mathf.RoundToInt(g.U(14)), normal = { textColor = Color.white } }))
                 g.Later(() => { tab = "family"; famStep = 0; err = ""; sel.Clear(); });
+            if (GUILayout.Button("<u>" + Loc.L("Email-ээр нэвтрэх", "Log in with email") + "</u>", new GUIStyle(g.sCenter) { fontSize = Mathf.RoundToInt(g.U(14)), normal = { textColor = Color.white } }))
+                g.Later(() => g.Open(new EmailLoginModal()));
             if (GUILayout.Button("<u>" + Loc.L("Google-ээр нэвтрэх", "Sign in with Google") + "</u>", new GUIStyle(g.sCenter) { fontSize = Mathf.RoundToInt(g.U(14)), normal = { textColor = Color.white } }))
                 g.Later(() => g.Open(new GoogleModal("login", g.EnterWithGoogle)));
             if (GUILayout.Button("<u>" + Loc.L("Төслийн тухай", "About the project") + "</u>", new GUIStyle(g.sCenter) { fontSize = Mathf.RoundToInt(g.U(14)), normal = { textColor = Color.white } })) g.Later(() => g.Open(new AboutPage()));
@@ -541,30 +545,43 @@ public sealed partial class Game
         void Basar(Game g, string text) { GUILayout.BeginHorizontal(); g.IconAt(Px.BankharFace(1), 40); g.Gap(10); GUILayout.Label(text, g.sTeach); GUILayout.EndHorizontal(); g.Gap(8); }
         void Register(Game g)
         {
-            g.Steps(step, 4);
+            g.Steps(step, 5);
+            void Error() { if (err != "") GUILayout.Label($"<color=#e14b3d>{err}</color>", g.sLabel); }
             if (step == 0)
             {
-                Basar(g, Loc.L("Вуф! Би Басар. Чиний нэрийг хэн гэдэг вэ?", "Woof! I’m Basar. What’s your name?"));
-                name = g.Field(name, 20, Loc.L("Нэрээ бич...", "Write your name...")); g.Gap(14);
-                if (err != "") GUILayout.Label($"<color=#e14b3d>{err}</color>", g.sLabel);
-                if (g.Btn(Loc.L("Цааш →", "Next →"), true, 54)) g.Later(() => { if (name.Trim() == "") err = Loc.L("Нэрээ бичээрэй", "Please write your name"); else { err = ""; name = name.Trim(); step = 1; } });
+                Basar(g, Loc.L("Вуф! Би Басар. Эхлээд email, нууц үгээ бичээрэй. Өөр утас, компьютер дээр үүгээр нэвтэрнэ. Том хүнээсээ тусламж аваарай!", "Woof! I'm Basar. First, your email and a password: you'll log in with them on another phone or computer. Ask a grown-up to help!"));
+                email = g.Field(email, 254, "Email"); g.Gap(6);
+                pass = g.PassField(pass, 64, Loc.L("Нууц үг (6+ тэмдэгт)", "Password (6+ characters)")); g.Gap(6);
+                pass2 = g.PassField(pass2, 64, Loc.L("Нууц үгээ давтана уу", "Password again")); g.Gap(10);
+                Error();
+                if (g.Btn(sending ? Loc.L("Шалгаж байна…", "Checking…") : Loc.L("Цааш →", "Next →"), true, 54, !sending)) g.Later(() => CheckEmail(g));
             }
             else if (step == 1)
+            {
+                Basar(g, Loc.L("Чиний нэрийг хэн гэдэг вэ?", "What's your name?"));
+                name = g.Field(name, 20, Loc.L("Нэрээ бич...", "Write your name...")); g.Gap(14);
+                Error();
+                GUILayout.BeginHorizontal();
+                if (g.Btn("←")) g.Later(() => { err = ""; step = 0; });
+                if (g.Btn(Loc.L("Цааш →", "Next →"), true)) g.Later(() => { if (name.Trim() == "") err = Loc.L("Нэрээ бичээрэй", "Please write your name"); else { err = ""; name = name.Trim(); step = 2; } });
+                GUILayout.EndHorizontal();
+            }
+            else if (step == 2)
             {
                 Basar(g, Loc.L($"Сайн уу, {name}! Хэдэн настай вэ? Насаа бичээрэй. Том хүмүүс ч тоглож болно!", $"Hi {name}! How old are you? Write your age. Grown-ups can play too!"));
                 // the age is written, not picked from a list: any age from 3 to 120
                 ageText = new string(g.Field(ageText, 3, Loc.L("Насаа бич...", "Your age...")).Where(char.IsDigit).ToArray()); g.Gap(14);
-                if (err != "") GUILayout.Label($"<color=#e14b3d>{err}</color>", g.sLabel);
+                Error();
                 GUILayout.BeginHorizontal();
-                if (g.Btn("←")) g.Later(() => { err = ""; step = 0; });
+                if (g.Btn("←")) g.Later(() => { err = ""; step = 1; });
                 if (g.Btn(Loc.L("Цааш →", "Next →"), true)) g.Later(() =>
                 {
-                    if (int.TryParse(ageText, out int a) && a >= 3 && a <= 120) { age = a; err = ""; step = 2; }
+                    if (int.TryParse(ageText, out int a) && a >= 3 && a <= 120) { age = a; err = ""; step = 3; }
                     else err = ageText == "" ? Loc.L("Насаа бичээрэй", "Please write your age") : Loc.L("3-аас 120 хүртэлх насаа бичээрэй", "Write an age from 3 to 120");
                 });
                 GUILayout.EndHorizontal();
             }
-            else if (step == 2)
+            else if (step == 3)
             {
                 Basar(g, Loc.L("Өөрийн сахиус амьтнаа сонго! ", "Pick your mascot animal! ") + Profiles.MASCOTS[avatar].fact);
                 for (int r = 0; r < 3; r++)
@@ -580,20 +597,58 @@ public sealed partial class Game
                     GUILayout.EndHorizontal();
                 }
                 GUILayout.BeginHorizontal();
-                if (g.Btn("←")) g.Later(() => step = 1);
-                if (g.Btn(Loc.L("Цааш →", "Next →"), true)) g.Later(() => { step = 3; sel.Clear(); });
+                if (g.Btn("←")) g.Later(() => step = 2);
+                if (g.Btn(Loc.L("Цааш →", "Next →"), true)) g.Later(() => { step = 4; err = ""; sel.Clear(); });
                 GUILayout.EndHorizontal();
             }
             else
             {
                 Basar(g, Loc.L("Сүүлийнх нь: 3 нууц зураг сонгоод профайлаа хамгаал. Дараалал нь чухал шүү!", "Last one: choose 3 secret pictures to protect your profile. The order matters!"));
-                void Finish(string code) { var p = SaveData.Create(name, age, avatar, code); g.App.profiles.Add(p.id); g.App.Save(); g.Enter(p); }
-                PicPad(g, Finish);
+                if (sending) g.Text(Loc.L("Бүртгэж байна…", "Signing you up…"));
+                else PicPad(g, code => { pics = code; SignUp(g); });
+                Error();
                 GUILayout.BeginHorizontal();
-                if (g.Btn("←")) g.Later(() => { step = 2; sel.Clear(); });
-                if (g.Btn(Loc.L("Алгасах", "Skip"))) g.Later(() => Finish(""));
+                if (g.Btn("←", false, 40, !sending)) g.Later(() => { err = ""; step = 3; sel.Clear(); });
+                if (g.Btn(Loc.L("Алгасах", "Skip"), false, 40, !sending)) g.Later(() => { pics = ""; SignUp(g); });
                 GUILayout.EndHorizontal();
             }
+        }
+        /** The first step: the email and password look right here, and the server says the email is still free. */
+        void CheckEmail(Game g)
+        {
+            string e = email.Trim();
+            if (!EmailApi.LooksLikeEmail(e)) { err = EmailApi.Why(J.Parse("{\"reason\":\"bad-email\"}")); Sfx.Bad(); return; }
+            if (pass.Length < 6) { err = Loc.L("Нууц үг 6-аас дээш тэмдэгттэй байна.", "The password needs 6 or more characters."); Sfx.Bad(); return; }
+            if (pass != pass2) { err = Loc.L("Хоёр нууц үг таарахгүй байна.", "The two passwords don't match."); Sfx.Bad(); return; }
+            if (pass.Trim().ToLowerInvariant() == e.ToLowerInvariant()) { err = EmailApi.Why(J.Parse("{\"reason\":\"weak-password\"}")); Sfx.Bad(); return; }
+            err = ""; sending = true;
+            g.StartCoroutine(EmailApi.Post(Family.ServerOf(g, null), "{\"act\":\"check\",\"email\":" + J.Quote(e) + "}", r =>
+            {
+                sending = false;
+                if (!r["ok"].B) { err = EmailApi.Why(r); Sfx.Bad(); return; }
+                if (!r["available"].B) { err = EmailApi.Why(J.Parse("{\"reason\":\"taken\"}")); Sfx.Bad(); return; }
+                email = e; step = 1;
+            }));
+        }
+        /** After the pictures: makes the profile (once), gives it the email and password on the server, then plays. */
+        void SignUp(Game g)
+        {
+            if (made == null) made = SaveData.Create(name, age, avatar, pics); else { made.code = pics; made.Save(); }
+            err = ""; sending = true; var p = made;
+            string body = "{\"act\":\"register\",\"id\":" + J.Quote(p.id) + ",\"ticket\":" + J.Quote(p.ticket) + ",\"email\":" + J.Quote(email.Trim()) + ",\"password\":" + J.Quote(pass)
+                + ",\"name\":" + J.Quote(name) + ",\"age\":" + age + ",\"avatar\":" + avatar + "}";
+            g.StartCoroutine(EmailApi.Post(Family.ServerOf(g, null), body, r =>
+            {
+                sending = false; sel.Clear();
+                if (!r["ok"].B)
+                {
+                    err = EmailApi.Why(r); Sfx.Bad();
+                    string why = r["reason"].S; if (why == "taken" || why == "bad-email" || why == "weak-password") step = 0; // taken meanwhile: back to the email
+                    return;
+                }
+                pass = pass2 = ""; p.email = r["email"].S ?? email.Trim(); p.Save();
+                g.App.profiles.Add(p.id); g.App.Save(); g.Enter(p);
+            }));
         }
         public override void Closed(Game g) { }
     }

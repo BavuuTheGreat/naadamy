@@ -86,6 +86,7 @@ public sealed class SaveData
     public List<string> campWon = new List<string>(); // defend-the-homeland chapters won
     public List<KV> story = new List<KV>();           // story mode: chapter id → the part reached; "<id>:done" once finished
     public string ticket = "";                      // multiplayer identity ticket (64 hex)
+    public string email = "";                       // the email this player logs in with on other devices (EmailAccount.cs)
     public string fam = "";                         // the family code this child was added to (Family.cs)
     public long charAt;                             // when the character (eth, aimag) was last chosen, for the cloud save
     // the server account this device last saw (Net.Sync): what the device has on top of it is progress still to upload
