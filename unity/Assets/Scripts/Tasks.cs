@@ -248,7 +248,7 @@ public sealed partial class Game
             if (t - flashT < 0.2f) { float a = 1 - (t - flashT) / 0.2f, w = g.U(3); var c = flashC; c.a = a; g.Box(new Rect(r.x - w, r.y - w, r.width + w * 2, w), c); g.Box(new Rect(r.x - w, r.yMax, r.width + w * 2, w), c); g.Box(new Rect(r.x - w, r.y, w, r.height), c); g.Box(new Rect(r.xMax, r.y, w, r.height), c); }
             if (sayText != null && t < s.sayT)   // what they say, in a box as tall as the words
             {
-                var sst = new GUIStyle(g.sLabel) { wordWrap = true, alignment = TextAnchor.MiddleCenter, padding = new RectOffset(Mathf.RoundToInt(g.U(8)), Mathf.RoundToInt(g.U(8)), Mathf.RoundToInt(g.U(4)), Mathf.RoundToInt(g.U(4))) };
+                var sst = new GUIStyle(g.sLabel) { fontSize = Mathf.RoundToInt(g.UiScale * Game.TALK), wordWrap = true, alignment = TextAnchor.MiddleCenter, padding = new RectOffset(Mathf.RoundToInt(g.U(8)), Mathf.RoundToInt(g.U(8)), Mathf.RoundToInt(g.U(4)), Mathf.RoundToInt(g.U(4))) };
                 var sc = new GUIContent("<color=#2b1e2e>" + sayText + "</color>"); float sw = r.width * 0.9f, shh = Mathf.Max(g.U(40), sst.CalcHeight(sc, sw));
                 var sr = new Rect(r.x + r.width * 0.05f, r.y + g.U(6), sw, shh); g.Box(sr, Px.Col("#fff8e6")); GUI.Label(sr, sc, sst);
             }
