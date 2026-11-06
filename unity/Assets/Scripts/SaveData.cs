@@ -128,9 +128,10 @@ public sealed class SaveData
         catch (Exception e) { Debug.LogWarning("Naadamy: could not read the save, starting fresh. " + e.Message); }
         return new SaveData { id = id }.Fix();
     }
-    public static SaveData Create(string name, int age, int avatar, string code)
+    /** id and ticket: the player the server made for an email account. */
+    public static SaveData Create(string name, int age, int avatar, string code, string id = null, string ticket = null)
     {
-        var v = new SaveData { id = "p" + NowMs().ToString("x"), name = name, age = age, avatar = avatar, code = code ?? "", created = DayKey() }.Fix();
+        var v = new SaveData { id = id ?? "p" + NowMs().ToString("x"), ticket = ticket ?? "", name = name, age = age, avatar = avatar, code = code ?? "", created = DayKey() }.Fix();
         EnsureTicket(v);
         v.Save(); return v;
     }

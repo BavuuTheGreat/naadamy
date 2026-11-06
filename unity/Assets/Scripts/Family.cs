@@ -223,28 +223,6 @@ public static class Family
             done(r);
         });
     }
-
-    /** The child picked on the family list logs in: the profile already on this device, or a new one for this child. */
-    public static IEnumerator Login(Game g, string server, string code, string id, string picsCode, Action<J, SaveData> done)
-    {
-        string body = "{\"act\":\"login\",\"code\":" + J.Quote(code) + ",\"id\":" + J.Quote(id) + ",\"pics\":" + PicsJson(picsCode) + "}";
-        yield return Post(server, body, r =>
-        {
-            if (!r["ok"].B) { done(r, null); return; }
-            string pid = r["id"].S; bool known = g.App.profiles.Contains(pid);
-            var p = SaveData.Load(pid); // a new child here: the starter wallet, so nothing to upload; the server's wallet arrives on join
-            if (!known) { p.name = r["name"].S; p.age = r["age"].I; p.avatar = r["avatar"].I; p.created = SaveData.DayKey(); }
-            p.ticket = r["ticket"].S; // this device's own ticket
-            p.code = picsCode; p.fam = r["code"].S;
-            Cloud.Apply(p, r["cloud"]); // character, lessons, badges… from the other device
-            if (string.IsNullOrWhiteSpace(p.server)) p.server = server.Trim();
-            p.Save();
-            if (!known) g.App.profiles.Add(pid);
-            g.App.familyCode = r["code"].S; g.App.server = server.Trim();
-            g.App.emailTo = r["email"]["to"].S ?? ""; g.App.emailFam = r["code"].S; g.App.Save(); // the weekly email's masked address: only login shows it
-            done(r, p);
-        });
-    }
 }
 
 /** The device's grown-up PIN, for the parent gate: only a salted PBKDF2 hash (SHA256, 20,000 rounds: one takes a moment on

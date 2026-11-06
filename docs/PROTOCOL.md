@@ -83,6 +83,19 @@ A grown-up can add an email for the family and get a **weekly report** of each c
   - `RESEND_API_KEY` and `EMAIL_FROM` (e.g. `Naadamy <hello@your-domain>`, on a domain verified in Resend). Without both, the feature is off: `set-email` answers `email-off` and no report is sent, but stop links still work. A key without `EMAIL_FROM` also logs a warning at start.
   - `PUBLIC_URL`: where the links point; default `https://pinequest-s5-episode-2-team-8.onrender.com`.
 
+## Email accounts
+
+`POST /api/auth` (`server/email-auth.js`): JSON, at most 4 KB, 30 requests a minute per address (`429 busy`). Every answer is `{ ok, … }` or `{ ok: false, reason }`.
+
+| `act` | Fields | Answer when `ok` |
+|---|---|---|
+| `signup` | `email, password` | `{ ok }`: a 6-digit code is mailed. Refused: `email-invalid`, `weak-password` (8–64 characters), `taken`, `busy` (3 mails an hour per address), `email-failed`, `email-off` |
+| `verify` | `email, code` | `{ ok, id, ticket, ready: false }`: the account and its player exist. Refused: `code` with `left`, `expired` (15 minutes or 5 wrong tries), `taken` |
+| `login` | `email, password` | `{ ok, id, ticket, ready, name, age, avatar, cloud }`: a new device ticket. Refused: `wrong` (with `left` for a known address), `locked` with `wait`, `erased` |
+| `profile` | `id, ticket, name, age, avatar` | `{ ok }`: sets `ready`. Until then the game asks the name, mascot and pictures again after a login |
+
+The 3 secret pictures stay on the device. Without `RESEND_API_KEY` and `EMAIL_FROM` the code is printed to the server log, except in production, where `signup` answers `email-off`.
+
 ## Voice clips (memory book)
 
 A memory's voice clip (Unity's `MemoryForm`, a WAV from `Wav.Save`) is kept on the server for the **family**, so it survives a new device and plays on every device of the family. Clips sit in a **private** Supabase Storage bucket (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, bucket `SUPABASE_VOICE_BUCKET`, default `naadamy-voice`, made private at start if missing). Without Supabase they are kept in `DATA_DIR/voice/<code>/<id>.wav` for local play, but on Render (its small data disk) or with `DATABASE_URL` set (records shared by every instance, files only on one) uploads answer `503 storage-off` unless `VOICE_ON_DISK=true`. Devices never talk to Storage: the server checks every request and streams the clip. Its metadata (`size`, uploader, time) is in `naadamy_voice` (JSON: `voice.json`).
@@ -285,9 +298,10 @@ JSON, at most 4 KB, 30 requests a minute per address (`429 busy`). Every answer 
 | `register` | `id, ticket, username, password` | `{ ok, username }`: the player `id` (its ticket checked like a room join) gets the account |
 | `login` | `username, password` | `{ ok, id, ticket, username, cloud }`: a new device ticket for the player, and its cloud save |
 | `me` | `id, ticket` | `{ ok, account: { username } \| null }` |
-| `rename` | `id, ticket, password, username` | `{ ok, username }`: the old name is free at once |
+| `claim` | `id, ticket, username` | `{ ok, username }`: as `register` without a password, for a player who signs in with email; `login` can't open this account |
+| `rename` | `id, ticket, username` | `{ ok, username }`: the old name is free at once |
 | `password` | `id, ticket, password, next` | `{ ok }` |
-| `delete` | `id, ticket, password, confirm` | `{ ok }`: `confirm` is the username typed again |
+| `delete` | `id, ticket, confirm` | `{ ok }`: `confirm` is the username typed again |
 
 - **Usernames:** 3–16 of `A–Z a–z 0–9 _` or Cyrillic letters, not Latin and Cyrillic mixed in one name, not a reserved
   word (`admin`, `naadamy`, `basar`, `cpu`…). Unique by a key: lower case, with Cyrillic letters that look like Latin ones
