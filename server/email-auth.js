@@ -4,6 +4,8 @@
    pictures, and `profile` keeps the name and mascot (with the save's default age), so `login` on any device brings the same player back. Until `profile`,
    `ready` is false: a login then goes on with those steps. Passwords are kept only as salted scrypt hashes; a code only as a
    hash, in memory, for 15 minutes and 5 tries; 5 wrong passwords lock the account for 15 minutes, doubling, at most a day.
+   A guest (a player made on the device, with no email) sends its `id` and `ticket` with `verify`: the account then belongs to
+   that player, so nothing is lost.
    Mail goes through Resend as in parent-email.js; without it the codes are printed to the log, except in production, where
    signing up is off. See docs/PROTOCOL.md, "Email accounts". */
 
@@ -39,7 +41,7 @@ function jsonAccounts(dataDir) {
     async byEmail(email) { const all = read(); return Object.hasOwn(all, email) ? { email, ...all[email] } : null; },
     async create({ email, id, hash, salt }) {
       const all = read();
-      if (Object.hasOwn(all, email)) return false;
+      if (Object.hasOwn(all, email) || Object.values(all).some((account) => account.id === id)) return false;
       put(all, email, { id, hash, salt, name: '', age: 0, avatar: 0, ready: false, fails: 0, locks: 0, until: 0 });
       write(all); return true;
     },
@@ -146,6 +148,9 @@ module.exports = function createEmailAuth(roomStore, { dataDir, cloudOf = async 
 
   async function verify(message) {
     const email = emailText(message.email), code = String(message.code || '').trim();
+    const guest = message.id !== undefined || message.ticket !== undefined;
+    const guestId = String(message.id || ''), guestTicket = String(message.ticket || '');
+    if (guest && (!PLAYER_ID.test(guestId) || !PLAYER_TICKET.test(guestTicket) || !(await roomStore.authenticatePlayer(guestId, guestTicket)))) return { ok: false, reason: 'identity' };
     sweep();
     const p = pending.get(email);
     if (!p) return { ok: false, reason: 'expired' };
@@ -154,8 +159,8 @@ module.exports = function createEmailAuth(roomStore, { dataDir, cloudOf = async 
       return { ok: false, reason: 'code', left: CODE_TRIES - p.tries };
     }
     pending.delete(email); // a code works once
-    const id = 'p' + crypto.randomBytes(8).toString('hex'), ticket = crypto.randomBytes(32).toString('hex');
-    if (!(await roomStore.authenticatePlayer(id, ticket))) return { ok: false, reason: 'storage' }; // the first ticket of an id makes its identity
+    const id = guest ? guestId : 'p' + crypto.randomBytes(8).toString('hex'), ticket = guest ? guestTicket : crypto.randomBytes(32).toString('hex');
+    if (!guest && !(await roomStore.authenticatePlayer(id, ticket))) return { ok: false, reason: 'storage' }; // the first ticket of an id makes its identity
     if (!(await accounts.create({ email, id, hash: p.hash, salt: p.salt }))) return { ok: false, reason: 'taken' };
     return { ok: true, id, ticket, ready: false };
   }

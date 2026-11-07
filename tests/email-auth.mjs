@@ -79,6 +79,19 @@ try {
   assert.equal(failing.enabled, true); assert.equal(off.enabled, false);
   assert.equal(createEmailAuth(store, { dataDir, env: {} }).enabled, true, 'a home server prints the code to its log');
 
+  // a guest made on the device links an email and stays the same player
+  const guest = { id: 'guest-player', ticket: 'a'.repeat(64) }, guestMail = 'guest@example.com';
+  assert.equal(await store.authenticatePlayer(guest.id, guest.ticket), true);
+  assert.deepEqual(await api({ act: 'signup', email: guestMail, password }), { ok: true });
+  assert.deepEqual(await api({ act: 'verify', email: guestMail, code: lastCode(), id: guest.id, ticket: 'b'.repeat(64) }), { ok: false, reason: 'identity' });
+  assert.deepEqual(await api({ act: 'verify', email: guestMail, code: lastCode(), ...guest }), { ok: true, ...guest, ready: false });
+  assert.deepEqual(await api({ act: 'profile', ...guest, name: 'Guest', age: 8, avatar: 1 }), { ok: true });
+  const elsewhere = await api({ act: 'login', email: guestMail, password });
+  assert.equal(elsewhere.id, guest.id, 'the other device gets the guest player');
+  assert.equal(elsewhere.name, 'Guest');
+  assert.deepEqual(await api({ act: 'signup', email: 'second@example.com', password }), { ok: true });
+  assert.deepEqual(await api({ act: 'verify', email: 'second@example.com', code: lastCode(), ...guest }), { ok: false, reason: 'taken' });
+
   await auth.forget([made.id]);
   assert.deepEqual(await api({ act: 'login', email, password }), { ok: false, reason: 'wrong' });
   console.log('email-auth: all passed');

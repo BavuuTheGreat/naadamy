@@ -74,6 +74,7 @@ const accounts = require('./accounts.js')(roomStore, arenaStore, { cloudOf: (id)
 const googleAuth = require('./google-auth.js')(roomStore, arenaStore, { dataDir: DATA_DIR, cloudOf: (id) => getCloudSave(id) });
 // sign up and log in with an email and a password (email-auth.js)
 const emailAuth = require('./email-auth.js')(roomStore, { dataDir: DATA_DIR, cloudOf: (id) => getCloudSave(id) });
+const roomCodes = require('./room-codes.js')(roomStore, { known: (code) => rooms.has(code) || Object.hasOwn(saved, code), opened: (code) => { room(code); markDirty(); } });
 const adminStats = require('./admin-stats.js')({ roomStore, dataDir: DATA_DIR, live: () => ({ ...counts(), rooms: rooms.size }) });
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.webmanifest': 'application/manifest+json', '.json': 'application/json', '.txt': 'text/plain; charset=utf-8', '.png': 'image/png',
@@ -106,6 +107,7 @@ function serveStatic(req, res) {
   if (url.pathname === '/api/family') return family.handle(req, res);
   if (url.pathname === '/api/account') return accounts.handle(req, res);
   if (url.pathname === '/api/auth') return emailAuth.handle(req, res);
+  if (url.pathname === '/api/room') return roomCodes.handle(req, res);
   if (url.pathname === '/api/voice' || url.pathname.startsWith('/api/voice/')) return voice.handle(req, res, url.pathname);
   if (url.pathname === '/api/email/confirm' || url.pathname === '/api/email/stop') return parentEmail.handle(req, res, url);
   if (adminStats.handle(req, res, url.pathname)) return;
@@ -1047,6 +1049,12 @@ function onMessage(conn, text) {
         // 'erased': the family was erased (the device forgets it); 'identity': a wrong or evicted ticket
         conn.send({ t: 'error', why: (await roomStore.isErased(id)) ? 'erased' : 'identity' });
         setTimeout(() => conn.socket.destroy(), 50);
+        return;
+      }
+      if (roomCodes.isPrivate(code) && !(await roomCodes.exists(code))) {
+        conn.missedRooms = (conn.missedRooms || 0) + 1; // guessing codes on one socket ends quickly
+        conn.send({ t: 'error', why: 'no-room' });
+        if (conn.missedRooms >= 5) setTimeout(() => conn.socket.destroy(), 50);
         return;
       }
       return joinPlayer(conn, m, code, id, t);

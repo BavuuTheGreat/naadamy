@@ -40,6 +40,7 @@ public sealed partial class Game
             Item("👨‍👩‍👧", Loc.L("Гэр бүл (том хүн)", "Family (grown-ups)"), () => g.OpenFamily());
             Item("🎙️", Loc.L("Гэр бүлийн дурсамж", "Family memory book"), () => g.Open(new MemoriesPage()));
             Item("❓", Loc.L("Болормаатай Нутгаар аялах", "Tour Nutag with Bolormaa"), () => g.StartTutorial(true));
+            if (V.email == "") Item("✉️", Loc.L("Имэйл холбох", "Link an email"), () => g.Open(new EmailLinkModal()));
             Item("⚙️", Loc.L("Тохиргоо", "Settings"), () => g.Open(new SettingsModal()));
             Item("ℹ️", Loc.L("Төслийн тухай", "About the project"), () => g.Open(new AboutPage()));
             if (g.Btn(Loc.L("Гарах / Профайл солих", "Log out / switch profile"), false, 36)) g.Later(g.LogOut);

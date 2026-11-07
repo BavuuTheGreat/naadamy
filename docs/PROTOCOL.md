@@ -94,6 +94,8 @@ A grown-up can add an email for the family and get a **weekly report** of each c
 | `login` | `email, password` | `{ ok, id, ticket, ready, name, age, avatar, cloud }`: a new device ticket. Refused: `wrong` (with `left` for a known address), `locked` with `wait`, `erased` |
 | `profile` | `id, ticket, name, age, avatar` | `{ ok }`: sets `ready`. Until then the game asks the name, mascot and pictures again after a login |
 
+A guest (a player made on the device, with no account) links an email with `signup`, then `verify` with its own `id, ticket` added: the account then belongs to that player, and `verify` answers with the same `id` and `ticket`. Refused: `identity` for a wrong ticket, `taken` when the player already has an email.
+
 The 3 secret pictures stay on the device. Without `RESEND_API_KEY` and `EMAIL_FROM` the code is printed to the server log, except in production, where `signup` answers `email-off`.
 
 ## Voice clips (memory book)
@@ -116,6 +118,16 @@ A memory's voice clip (Unity's `MemoryForm`, a WAV from `Wav.Save`) is kept on t
 - **Gone with the family:** `erase` (and `remove` of its last child, which deletes the family) drops the family's records in the same transaction (or file write), then deletes its clips from Storage; on PostgreSQL every instance does it again when it hears `family-erased` (twice is harmless). Taking out one child keeps the clips they made (they are the family's).
 - Answers other than the clip are JSON `{ ok: false, reason }` with `cache-control: no-store`: `invalid` (400), `identity` (403), `pin` / `pin-locked` / `needs-pin` (403, as in `check-pin`), `no-family` / `no-clip` (404), `method` (405), `timeout` (408), `taken` (409), `too-big` (413), `not-wav` (415), `busy` (429), `storage` (500), `storage-off` (503), `quota` / `storage-full` (507).
 - A browser page calling it needs an allowed origin (CORS allows `PUT`, `DELETE` and the `x-*` headers above). The service role key is never sent or logged.
+
+## Private rooms
+
+`POST /api/room` (`server/room-codes.js`): JSON, 30 requests a minute per address (`429 busy`).
+
+| `act` | Fields | Answer when `ok` |
+|---|---|---|
+| `open` | `id, ticket` | `{ ok, code }`: a new room with a random code of 6 letters (no I, L or O). Refused: `identity`, `busy` |
+
+A `join` with a 6-letter code works only for a room that exists, otherwise the answer is `error` with `why: 'no-room'`; 5 of those close the socket. The Unity game never joins `NUTAG`: with no room saved it opens one, and friends join with its code. Other codes, `NUTAG` among them, work as before for released builds and the web client.
 
 ## Connection flow
 
@@ -256,7 +268,7 @@ Room lots and the recent chat log are saved every 5 seconds when changed and on 
 | `quest-claim-result` | `quest, accepted, reason?, wallet` | Reply to `quest-claim`. Known quest claims return `reason: 'server-only'` until quest progress is server-verified. |
 | `daily-activity-result` | `activity, day, accepted, reason?, wallet` | Reply to `daily-activity-claim`; known activities return `reason: 'server-only'` until the activity is server-verified. `day` is the server's Mongolia day. |
 | `deny` | `act, why` | Request refused. `act: 'ger'` → `why: 'taken' \| 'own'`; `act: 'wr'` → `why: 'busy'`. |
-| `error` | `why` | `why: 'bad-join'` = bad room code or id; `'identity'` = the ticket does not authenticate that profile id. A refused `join` doesn't change an existing room session. |
+| `error` | `why` | `why: 'bad-join'` = bad room code or id; `'identity'` = the ticket does not authenticate that profile id; `'no-room'` = no room has that 6-letter code. A refused `join` doesn't change an existing room session. |
 | `replaced` | (none) | Your id joined from another tab or device; this connection will close. Don't reconnect. |
 
 ### Wrestling rules (server side)

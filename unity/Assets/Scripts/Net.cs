@@ -35,7 +35,8 @@ public sealed class Net
 
     public string status = "solo"; // solo | connecting | online | reconnecting
     public string failWhy;           // why the last connect gave up (shown with "Connect again"), null when fine
-    public string room = "NUTAG", serverUrl;
+    public string room = "", serverUrl;
+    string backRoom; int opening;    // backRoom: the room to go back to when a typed code is wrong · opening: which OpenRoom answer still counts
     public readonly Dictionary<string, Other> others = new Dictionary<string, Other>();
     public Lot[] lots; public int total, nutag; public bool replaced;
     public bool Online => status == "online";
@@ -77,13 +78,27 @@ public sealed class Net
     public void Connect(Game g)
     {
         Close(); replaced = false; welcomed = false; failWhy = null; retry = 0; connectAt = Time.realtimeSinceStartup;
-        serverUrl = WsUrl(Family.ServerOf(g, g.V)); room = string.IsNullOrEmpty(g.V.room) ? "NUTAG" : g.V.room;
+        serverUrl = WsUrl(Family.ServerOf(g, g.V)); room = g.V.room ?? "";
         if (serverUrl == null) { status = "solo"; return; }
-        closed = false; status = "connecting"; Open(g);
+        closed = false; status = "connecting";
+        if (room == "") OpenRoom(g); else Open(g);
     }
+    /** No room yet: the server opens one, and its 6-letter code is what friends type to come in. */
+    void OpenRoom(Game g)
+    {
+        var V = g.V; SaveData.EnsureTicket(V); int mine = ++opening;
+        g.StartCoroutine(ArenaApi.Post(Family.ServerOf(g, V), ArenaApi.Body("open", "id", V.id, "ticket", V.ticket), r =>
+        {
+            if (mine != opening) return; // closed, or connecting anew, in the meantime
+            if (!r["ok"].B) { GiveUp(g, Loc.L("Өрөө нээж чадсангүй. Дараа дахин оролдоорой.", "Could not open a room. Try again a bit later.")); return; }
+            room = V.room = r["code"].S; V.Save(); Open(g);
+        }, "/api/room"));
+    }
+    public void NewRoom(Game g) { g.V.room = ""; g.V.Save(); Connect(g); }
+    public void JoinRoom(Game g, string code) { backRoom = g.V.room; g.V.room = code; g.V.Save(); Connect(g); }
     public void Close()
     {
-        closed = true; retryAt = -1;
+        closed = true; retryAt = -1; opening++;
 #if UNITY_WEBGL && !UNITY_EDITOR
         if (webLive) { webLive = false; NaadamyWsClose(); }
 #endif
@@ -236,6 +251,13 @@ public sealed class Net
                     g.Toast(Loc.L("Токен хүчингүй байна. Дахин нэвтэрнэ үү.", "Invalid ticket. Please sign in again."));
                     return;
                 }
+                if (m["why"].S == "no-room") // a mistyped code: "Connect again" goes back to the room before it
+                {
+                    if (g.V != null) { g.V.room = backRoom ?? ""; g.V.Save(); }
+                    backRoom = null;
+                    GiveUp(g, Loc.L("Ийм кодтой өрөө олдсонгүй. Кодоо шалгаарай.", "No room has that code. Check it and try again."));
+                    return;
+                }
                 if (m["why"].S == "storage")
                 {
                     if (!Online) GiveUp(g, Loc.L("Серверийн хадгалалт алдаа гарлаа. Дараа дахин холбогдоорой.", "Server storage error. Connect again a bit later."));
@@ -286,7 +308,7 @@ public sealed class Net
                 else if (others.TryGetValue(id, out var os)) { os.bubble = text; os.bubbleIcon = icon; os.bubbleT = Time.time; AddChat(g, new ChatLine { k = emote ? "e" : "p", id = id, n = os.name, i = i }); }
                 return;
             }
-            case "census": { bool first = total == 0 && nutag == 0; total = m["total"].I; nutag = m["nutag"].I; int away = total - others.Count - 1; if (first && away > 0 && others.Count == 0 && room != "NUTAG" && nutag > 0) g.Toast(Loc.L($"Үндсэн Нутагт {nutag} хүн тоглож байна. Өрөөний товчоор нэгдээрэй.", $"{nutag} people are playing in the main village. Use the room button to join them.")); return; }
+            case "census": total = m["total"].I; nutag = m["nutag"].I; return;
             case "lot":
             {
                 int i = m["i"].I; var l = LotOf(m["lot"]); if (lots != null && i >= 0 && i < lots.Length) lots[i] = l;
@@ -462,21 +484,23 @@ public sealed partial class Game
         string code;
         public override void Draw(Game g)
         {
-            var n = g.net; code ??= n.room;
+            var n = g.net; code ??= "";
             g.Title(Loc.L("Хамт тоглох өрөө", "Play-together room"));
             if (string.IsNullOrEmpty(Family.ServerOf(g, g.V))) { g.Text(Loc.L("Найзуудтайгаа хамт тоглохын тулд том хүнээс ☰ → Тохиргоо хэсэгт серверийн хаягийг бичүүлээрэй.", "To play with friends, ask a grown-up to add the server address in ☰ → Settings.")); if (g.Btn(Loc.L("Тохиргоо", "Settings"), true, 40)) g.Later(() => g.Swap(new SettingsModal())); }
             if (!string.IsNullOrEmpty(Family.ServerOf(g, g.V)))
             {
-                g.Small(n.Online ? Loc.L($"“{n.room}” өрөөнд {n.others.Count + 1} хүн байна. Ижил кодтой хүмүүс нэг нутагт хамт тоглоно.", $"{n.others.Count + 1} people in room “{n.room}”. Everyone with the same code plays in one village.")
+                if (n.Online) GUILayout.Label(n.room, new GUIStyle(g.sBig) { alignment = TextAnchor.MiddleCenter });
+                g.Small(n.Online ? Loc.L($"Энэ өрөөнд {n.others.Count + 1} хүн байна. Энэ кодыг найздаа өгвөл тэд орж ирнэ.", $"{n.others.Count + 1} people in this room. Give this code to your friends so they can come in.")
                     : n.status == "solo" ? n.failWhy ?? Loc.L("Сервертэй холбогдоогүй байна.", "Not connected to the server.") : Loc.L("Холбогдож байна…", "Connecting…"));
                 GUILayout.BeginHorizontal();
-                code = GUILayout.TextField(code ?? "", 8, new GUIStyle(g.sBtn) { alignment = TextAnchor.MiddleCenter }, GUILayout.MinHeight(g.U(40))).ToUpperInvariant();
+                code = GUILayout.TextField(code ?? "", 6, new GUIStyle(g.sBtn) { alignment = TextAnchor.MiddleCenter }, GUILayout.MinHeight(g.U(40))).ToUpperInvariant();
                 if (GUILayout.Button(Loc.L("Нэгдэх", "Join"), g.sPrimary, GUILayout.Width(g.U(100)), GUILayout.MinHeight(g.U(40)))) g.Later(() =>
                 {
-                    string c = (code ?? "").Trim().ToUpperInvariant(); if (c.Length < 3 || c.Length > 8 || !c.All(ch => (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9'))) { g.Toast(Loc.L("Код 3-8 латин үсэг, тоо байна.", "The code is 3-8 letters or digits.")); return; }
-                    g.V.room = c; g.V.Save(); n.Connect(g);
+                    string c = (code ?? "").Trim().ToUpperInvariant(); if (c.Length != 6 || !c.All(ch => ch >= 'A' && ch <= 'Z')) { g.Toast(Loc.L("Код 6 латин үсэгтэй байна.", "The code has 6 letters.")); return; }
+                    code = ""; n.JoinRoom(g, c);
                 });
                 GUILayout.EndHorizontal();
+                if (n.status == "online" || n.status == "solo") { if (g.Btn(Loc.L("Шинэ өрөө нээх", "Open a new room"), false, 34)) g.Later(() => n.NewRoom(g)); }
                 if (n.status == "solo" && g.Btn(Loc.L("Дахин холбогдох", "Connect again"), false, 34)) g.Later(() => n.Connect(g));
                 if (n.Online && g.Btn(Loc.L("Шилдэгүүд", "Leaderboard"), false, 34)) g.Later(() => g.Swap(new BoardModal()));
             }
