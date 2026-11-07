@@ -100,6 +100,19 @@ module.exports = function createAccounts(roomStore, arenaStore, { now = () => Da
     onChange(id);
     return { ok: true, username: name };
   }
+  /** A wrestler name for a player who signs in with email (email-auth.js): the device's ticket is enough, there is no arena password. */
+  async function claim(message) {
+    const id = String(message.id || ''), ticket = String(message.ticket || '');
+    if (!PLAYER_ID.test(id) || !PLAYER_TICKET.test(ticket)) return { ok: false, reason: 'invalid' };
+    const { name, key, why } = checkName(message.username);
+    if (!name) return { ok: false, reason: why };
+    if (!(await roomStore.authenticatePlayer(id, ticket))) return { ok: false, reason: (await roomStore.isErased(id)) ? 'erased' : 'identity' };
+    const record = await passwordRecord(crypto.randomBytes(32).toString('hex')); // nobody knows it: `login` can't open this account
+    const result = await arenaStore.createAccount({ id, username: name, key, ...record });
+    if (result !== 'ok') return { ok: false, reason: result };
+    onChange(id);
+    return { ok: true, username: name };
+  }
   async function login(message) {
     const { name, key } = checkName(message.username);
     if (!name || !passwordOk(message.password)) return { ok: false, reason: 'wrong' };
@@ -121,8 +134,6 @@ module.exports = function createAccounts(roomStore, arenaStore, { now = () => Da
     if (refusal) return refusal;
     const { name, key, why } = checkName(message.username);
     if (!name) return { ok: false, reason: why };
-    const wrong = await verify(account, message.password);
-    if (wrong) return wrong;
     const result = await arenaStore.renameAccount(account.id, name, key);
     if (result !== 'ok') return { ok: false, reason: result };
     onChange(account.id);
@@ -141,14 +152,12 @@ module.exports = function createAccounts(roomStore, arenaStore, { now = () => Da
     const { account, refusal } = await owner(message);
     if (refusal) return refusal;
     if (typeof message.confirm !== 'string' || nameKey(message.confirm.trim()) !== account.key) return { ok: false, reason: 'confirm' };
-    const wrong = await verify(account, message.password);
-    if (wrong) return wrong;
     await arenaStore.deleteAccounts([account.id]);
     onDelete(account.id);
     return { ok: true };
   }
 
-  const ACTS = { check, register, login, me, rename, password, delete: remove };
+  const ACTS = { check, register, claim, login, me, rename, password, delete: remove };
   function handle(req, res) {
     const send = (status, body) => { res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }); res.end(JSON.stringify(body)); };
     if (req.method !== 'POST') return send(405, { ok: false, reason: 'method' });
@@ -172,3 +181,5 @@ module.exports = function createAccounts(roomStore, arenaStore, { now = () => Da
 };
 module.exports.checkName = checkName;
 module.exports.nameKey = nameKey;
+module.exports.hashPassword = hashPassword;
+module.exports.passwordRecord = passwordRecord;

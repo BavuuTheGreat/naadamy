@@ -268,3 +268,5 @@ module.exports = function createParentEmail(roomStore, { env = process.env, now 
 
   return { enabled, address: emailText, shownFor, set, remove, confirm, stop, sendDue, start, handle };
 };
+module.exports.resend = resend;
+module.exports.emailText = emailText;

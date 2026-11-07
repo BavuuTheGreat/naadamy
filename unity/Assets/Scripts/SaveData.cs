@@ -43,7 +43,8 @@ public sealed class SaveData
     public int coins = 40, xp;
     public float energy = Rules.ENERGY_MAX;
     public bool hasPos, tips, tutorial;
-    public string room = "NUTAG";
+    public string room = "";                    // the private room to connect to (server/room-codes.js); "" until one is opened
+    public string email = "";                   // the linked email account; "" for a guest
     public long tutorialSeen, nominLast;
     public List<KV> nominSaid = new List<KV>();
     public float posX, posY;
@@ -128,9 +129,10 @@ public sealed class SaveData
         catch (Exception e) { Debug.LogWarning("Naadamy: could not read the save, starting fresh. " + e.Message); }
         return new SaveData { id = id }.Fix();
     }
-    public static SaveData Create(string name, int age, int avatar, string code)
+    /** id and ticket: the player the server made for an email account. */
+    public static SaveData Create(string name, int age, int avatar, string code, string id = null, string ticket = null)
     {
-        var v = new SaveData { id = "p" + NowMs().ToString("x"), name = name, age = age, avatar = avatar, code = code ?? "", created = DayKey() }.Fix();
+        var v = new SaveData { id = id ?? "p" + NowMs().ToString("x"), ticket = ticket ?? "", name = name, age = age, avatar = avatar, code = code ?? "", created = DayKey() }.Fix();
         EnsureTicket(v);
         v.Save(); return v;
     }
@@ -149,7 +151,8 @@ public sealed class SaveData
     /** Fills in anything an older save didn't have. */
     SaveData Fix()
     {
-        ger ??= new GerSave(); shorn ??= new List<KV>(); fam ??= ""; server ??= "";
+        ger ??= new GerSave(); shorn ??= new List<KV>(); fam ??= ""; server ??= ""; email ??= "";
+        if (room == null || room == "NUTAG") room = ""; // older saves: nobody lands in the main village any more
         if (gerBuilt && ger.stage == 0) { ger.stage = 9; ger.lot = lot.i; } // a ger bought before gers were built by hand
         if (string.IsNullOrEmpty(id)) id = Guid.NewGuid().ToString("N").Substring(0, 12);
         look ??= new Look(); horse ??= new HorseSave(); arch ??= new ArchSave(); wr ??= new WrSave(); emee ??= new EmeeSave(); lot ??= new LotSave();

@@ -12,11 +12,11 @@ using UnityEngine.Networking;
 /** POST /api/account: register, log in, rename, change the password, delete. See docs/PROTOCOL.md, "Online arena". */
 public static class ArenaApi
 {
-    static string Url(string server) { string s = (server ?? "").Trim().TrimEnd('/'); if (s == "") return null; if (!s.StartsWith("http")) s = Family.SCHEME + s; return s + "/api/account"; }
+    static string Url(string server, string path) { string s = (server ?? "").Trim().TrimEnd('/'); if (s == "") return null; if (!s.StartsWith("http")) s = Family.SCHEME + s; return s + path; }
     /** done always gets an object: the server's answer, or { ok: false, reason: "offline" | "no-server" }. */
-    public static IEnumerator Post(string server, string body, Action<J> done)
+    public static IEnumerator Post(string server, string body, Action<J> done, string path = "/api/account")
     {
-        string url = Url(server);
+        string url = Url(server, path);
         if (url == null) { done(J.Parse("{\"ok\":false,\"reason\":\"no-server\"}")); yield break; }
         using (var r = new UnityWebRequest(url, "POST"))
         {
@@ -184,9 +184,9 @@ public sealed partial class Game
     public sealed class ArenaHubModal : Modal
     {
         string tab = "play", boardK = "global";
-        string user = "", pass = "", pass2 = "", addName = "", newName = "", curPass = "", nextPass = "", confirmName = "", delPass = "";
+        string user = "", addName = "", newName = "", confirmName = "";
         string err = "", note = "", availFor = "", avail = "";
-        bool busy, login, askedLists; float checkAt = -1; Vector2 scroll;
+        bool busy, askedLists; float checkAt = -1; Vector2 scroll;
         public override float Width => 700;
         public override (string who, string face)? Speaker => ("zasuul", "proud");
 
@@ -195,7 +195,7 @@ public sealed partial class Game
             var A = g.arena;
             if (g.net.Online && !A.known && Time.realtimeSinceStartup - A.helloAt > 4) g.ArenaHello();
             // is the username being typed free? asked a moment after typing stops
-            if (A.u == null && !login && checkAt > 0 && Time.realtimeSinceStartup > checkAt) { checkAt = -1; Check(g); }
+            if (A.u == null && checkAt > 0 && Time.realtimeSinceStartup > checkAt) { checkAt = -1; Check(g); }
             if (A.u != null && !askedLists && g.net.Online) { askedLists = true; g.net.Send("{\"t\":\"fr-list\"}"); g.net.Send("{\"t\":\"ar-history\"}"); g.ArenaSend("ar-board", "k", boardK); }
         }
         void Check(Game g)
@@ -236,76 +236,30 @@ public sealed partial class Game
             if (g.Btn(Loc.L("Хаах", "Close"), false, 30)) g.Later(g.Close);
         }
 
-        // ---------------------------------------------------------------- sign up or log in
+        // ---------------------------------------------------------------- the wrestler's name
         void Account(Game g)
         {
-            GUILayout.BeginHorizontal();
-            if (g.Btn(Loc.L("Шинэ бүртгэл", "New account"), !login, 36)) g.Later(() => { login = false; err = ""; });
-            if (g.Btn(Loc.L("Нэвтрэх", "Log in"), login, 36)) g.Later(() => { login = true; err = ""; });
-            GUILayout.EndHorizontal();
-            if (!login)
-            {
-                g.Small(Loc.L("Хүн бүр өөрийн давтагдашгүй нэртэй. Найзууд чинь энэ нэрээр чамайг олно.", "Everyone has their own unique username. Friends find you by it."));
-                GUILayout.Label(Loc.L("Нэр (3–16 үсэг, тоо, _)", "Username (3–16 letters, digits, _)"), g.sSmall);
-                string before = user;
-                user = GUILayout.TextField(user, 16, Field(g), GUILayout.MinHeight(g.U(38)));
-                if (user != before) { avail = ""; checkAt = Time.realtimeSinceStartup + 0.6f; }
-                if (avail == "yes") g.Small("<color=#2ea35f>✓ " + Loc.L("Энэ нэр чөлөөтэй!", "This username is free!") + "</color>");
-                else if (avail != "") g.Small("<color=#e14b3d>✗ " + ArenaApi.Why(J.Parse("{\"reason\":" + J.Quote(avail) + "}")) + "</color>");
-                GUILayout.Label(Loc.L("Нууц үг (6+ тэмдэгт)", "Password (6+ characters)"), g.sSmall);
-                pass = GUILayout.PasswordField(pass, '•', 64, Field(g), GUILayout.MinHeight(g.U(38)));
-                GUILayout.Label(Loc.L("Нууц үгээ давтана уу", "Password again"), g.sSmall);
-                pass2 = GUILayout.PasswordField(pass2, '•', 64, Field(g), GUILayout.MinHeight(g.U(38)));
-                g.Small(Loc.L("Нууц үгээ мартвал өөр төхөөрөмж дээр нэвтэрч чадахгүй. Том хүнд хадгалуулаарай.", "Without the password you can't log in on another device. Ask a grown-up to keep it safe."));
-                if (g.Btn(busy ? Loc.L("Түр хүлээнэ үү…", "One moment…") : Loc.L("Бүртгэл үүсгэх", "Create account"), true, 44, !busy)) g.Later(() => Register(g));
-            }
-            else
-            {
-                g.Small(Loc.L("Өөр төхөөрөмж дээр үүсгэсэн бүртгэлээрээ нэвтэрвэл тэр бөх энэ төхөөрөмж дээр нэмэгдэнэ.", "Log in with an account made on another device to bring that wrestler here."));
-                GUILayout.Label(Loc.L("Нэр", "Username"), g.sSmall);
-                user = GUILayout.TextField(user, 16, Field(g), GUILayout.MinHeight(g.U(38)));
-                GUILayout.Label(Loc.L("Нууц үг", "Password"), g.sSmall);
-                pass = GUILayout.PasswordField(pass, '•', 64, Field(g), GUILayout.MinHeight(g.U(38)));
-                if (g.Btn(busy ? Loc.L("Түр хүлээнэ үү…", "One moment…") : Loc.L("Нэвтрэх", "Log in"), true, 44, !busy)) g.Later(() => Login(g));
-            }
+            g.Small(Loc.L("Хүн бүр өөрийн давтагдашгүй нэртэй. Найзууд чинь энэ нэрээр чамайг олно.", "Everyone has their own unique username. Friends find you by it."));
+            GUILayout.Label(Loc.L("Нэр (3–16 үсэг, тоо, _)", "Username (3–16 letters, digits, _)"), g.sSmall);
+            string before = user;
+            user = GUILayout.TextField(user, 16, Field(g), GUILayout.MinHeight(g.U(38)));
+            if (user != before) { avail = ""; checkAt = Time.realtimeSinceStartup + 0.6f; }
+            if (avail == "yes") g.Small("<color=#2ea35f>✓ " + Loc.L("Энэ нэр чөлөөтэй!", "This username is free!") + "</color>");
+            else if (avail != "") g.Small("<color=#e14b3d>✗ " + ArenaApi.Why(J.Parse("{\"reason\":" + J.Quote(avail) + "}")) + "</color>");
+            if (g.Btn(busy ? Loc.L("Түр хүлээнэ үү…", "One moment…") : Loc.L("Нэр авах", "Take this name"), true, 44, !busy)) g.Later(() => Claim(g));
             if (err != "") g.Text("<color=#e14b3d>" + err + "</color>");
             if (g.Btn(Loc.L("Хаах", "Close"), false, 30)) g.Later(g.Close);
         }
-        void Register(Game g)
+        void Claim(Game g)
         {
-            err = "";
-            if (pass != pass2) { err = Loc.L("Хоёр нууц үг таарахгүй байна.", "The two passwords don't match."); Sfx.Bad(); return; }
-            SaveData.EnsureTicket(g.V); busy = true;
-            g.StartCoroutine(ArenaApi.Post(Family.ServerOf(g, g.V), ArenaApi.Body("register", "id", g.V.id, "ticket", g.V.ticket, "username", user.Trim(), "password", pass), r =>
+            err = ""; SaveData.EnsureTicket(g.V); busy = true;
+            g.StartCoroutine(ArenaApi.Post(Family.ServerOf(g, g.V), ArenaApi.Body("claim", "id", g.V.id, "ticket", g.V.ticket, "username", user.Trim()), r =>
             {
                 busy = false;
                 if (!r["ok"].B) { err = ArenaApi.Why(r); Sfx.Bad(); return; }
-                pass = pass2 = ""; Sfx.Win(); g.Confetti(40);
-                g.Toast(Loc.L($"Тавтай морил, {r["username"].S}! Таны бөхийн бүртгэл үүслээ.", $"Welcome, {r["username"].S}! Your wrestler account is ready."));
+                Sfx.Win(); g.Confetti(40);
+                g.Toast(Loc.L($"Тавтай морил, {r["username"].S}! Таны бөхийн нэр бэлэн боллоо.", $"Welcome, {r["username"].S}! Your wrestler name is ready."));
                 g.ArenaHello();
-            }));
-        }
-        void Login(Game g)
-        {
-            err = ""; busy = true; string server = Family.ServerOf(g, g.V);
-            g.StartCoroutine(ArenaApi.Post(server, ArenaApi.Body("login", "username", user.Trim(), "password", pass), r =>
-            {
-                busy = false;
-                if (!r["ok"].B) { err = ArenaApi.Why(r); Sfx.Bad(); return; }
-                pass = "";
-                string pid = r["id"].S;
-                if (pid == g.V.id) { g.V.ticket = r["ticket"].S; g.V.Save(); g.ArenaHello(); return; } // this is already the account's character
-                bool known = g.App.profiles.Contains(pid);
-                var p = SaveData.Load(pid);
-                if (!known) { p.name = Clean(r["username"].S); p.created = SaveData.DayKey(); }
-                p.ticket = r["ticket"].S;
-                Cloud.Apply(p, r["cloud"]);
-                if (string.IsNullOrWhiteSpace(p.server)) p.server = server.Trim();
-                p.Save();
-                if (!known) g.App.profiles.Add(pid);
-                g.App.server = server.Trim(); g.App.Save();
-                g.Toast(Loc.L($"{r["username"].S} болж нэвтэрлээ.", $"Logged in as {r["username"].S}."));
-                g.Later(() => g.Enter(p));
             }));
         }
 
@@ -452,26 +406,18 @@ public sealed partial class Game
         void Me(Game g)
         {
             var A = g.arena;
-            g.Fact(Loc.L($"Таны нэр: <b>{A.u}</b>. Найзууд тань энэ нэрээр олно. Өөр төхөөрөмж дээр энэ нэр, нууц үгээрээ нэвтэрнэ.", $"Your username: <b>{A.u}</b>. Friends find you by it; log in on another device with it and your password."), true, Loc.L("Бүртгэл", "Account"));
+            g.Fact(Loc.L($"Таны нэр: <b>{A.u}</b>. Найзууд тань энэ нэрээр олно.", $"Your username: <b>{A.u}</b>. Friends find you by it."), true, Loc.L("Бүртгэл", "Account"));
             GUILayout.Label("<b>" + Loc.L("Нэр солих", "Change username") + "</b>", g.sLabel);
             g.Small(Loc.L("Хуучин нэр чинь бусдад чөлөөтэй болно.", "Your old name becomes free for others."));
             newName = GUILayout.TextField(newName, 16, Field(g), GUILayout.MinHeight(g.U(36)));
-            GUILayout.Label(Loc.L("Одоогийн нууц үг", "Current password"), g.sSmall);
-            curPass = GUILayout.PasswordField(curPass, '•', 64, Field(g), GUILayout.MinHeight(g.U(36)));
-            if (g.Btn(Loc.L("Нэр солих", "Change username"), false, 36, !busy && newName.Trim().Length >= 3)) g.Later(() => Act(g, ArenaApi.Body("rename", "id", g.V.id, "ticket", g.V.ticket, "password", curPass, "username", newName.Trim()), Loc.L("Нэр солигдлоо.", "Username changed."), () => newName = ""));
-            GUILayout.Label("<b>" + Loc.L("Нууц үг солих", "Change password") + "</b>", g.sLabel);
-            GUILayout.Label(Loc.L("Шинэ нууц үг", "New password"), g.sSmall);
-            nextPass = GUILayout.PasswordField(nextPass, '•', 64, Field(g), GUILayout.MinHeight(g.U(36)));
-            if (g.Btn(Loc.L("Нууц үг солих", "Change password"), false, 36, !busy && nextPass.Length >= 6)) g.Later(() => Act(g, ArenaApi.Body("password", "id", g.V.id, "ticket", g.V.ticket, "password", curPass, "next", nextPass), Loc.L("Нууц үг солигдлоо.", "Password changed."), () => nextPass = ""));
+            if (g.Btn(Loc.L("Нэр солих", "Change username"), false, 36, !busy && newName.Trim().Length >= 3)) g.Later(() => Act(g, ArenaApi.Body("rename", "id", g.V.id, "ticket", g.V.ticket, "username", newName.Trim()), Loc.L("Нэр солигдлоо.", "Username changed."), () => newName = ""));
             g.Gap(10);
-            GUILayout.Label("<b><color=#e14b3d>" + Loc.L("Бүртгэл устгах", "Delete account") + "</color></b>", g.sLabel);
-            g.Small(Loc.L("Нэр, найзууд, оноо, түүх устна. Дүр, зоос, XP чинь энэ төхөөрөмж дээр үлдэнэ.", "Your username, friends, rating and record are deleted. Your character, coins and XP stay."));
+            GUILayout.Label("<b><color=#e14b3d>" + Loc.L("Бөхийн нэр устгах", "Delete wrestler name") + "</color></b>", g.sLabel);
+            g.Small(Loc.L("Нэр, найзууд, оноо, түүх устна. Дүр, зоос, XP чинь үлдэнэ.", "Your username, friends, rating and record are deleted. Your character, coins and XP stay."));
             GUILayout.Label(Loc.L("Баталгаажуулахын тулд нэрээ бичнэ үү", "Type your username to confirm"), g.sSmall);
             confirmName = GUILayout.TextField(confirmName, 16, Field(g), GUILayout.MinHeight(g.U(36)));
-            GUILayout.Label(Loc.L("Нууц үг", "Password"), g.sSmall);
-            delPass = GUILayout.PasswordField(delPass, '•', 64, Field(g), GUILayout.MinHeight(g.U(36)));
-            if (g.Btn(Loc.L("Бүртгэлээ бүрмөсөн устгах", "Delete my account for good"), false, 36, !busy && confirmName.Trim().Length >= 3 && delPass.Length >= 6))
-                g.Later(() => Act(g, ArenaApi.Body("delete", "id", g.V.id, "ticket", g.V.ticket, "password", delPass, "confirm", confirmName.Trim()), Loc.L("Бүртгэл устлаа.", "Account deleted."), () => { confirmName = delPass = ""; tab = "play"; }));
+            if (g.Btn(Loc.L("Бүрмөсөн устгах", "Delete for good"), false, 36, !busy && confirmName.Trim().Length >= 3))
+                g.Later(() => Act(g, ArenaApi.Body("delete", "id", g.V.id, "ticket", g.V.ticket, "confirm", confirmName.Trim()), Loc.L("Устлаа.", "Deleted."), () => { confirmName = ""; tab = "play"; }));
         }
         void Act(Game g, string body, string okText, Action after)
         {
@@ -480,7 +426,7 @@ public sealed partial class Game
             {
                 busy = false;
                 if (!r["ok"].B) { err = ArenaApi.Why(r); Sfx.Bad(); return; }
-                note = okText; curPass = ""; Sfx.Good(); after?.Invoke(); g.ArenaHello();
+                note = okText; Sfx.Good(); after?.Invoke(); g.ArenaHello();
             }));
         }
 

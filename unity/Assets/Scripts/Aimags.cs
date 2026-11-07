@@ -374,7 +374,7 @@ public sealed partial class Game
                 GUILayout.BeginHorizontal(g.sBtn); g.IconAt(Px.Char(look, 0, 0), 80); g.Gap(10);
                 GUILayout.BeginVertical();
                 GUILayout.Label("<b>" + Loc.L($"Сайн уу, {V.name}!", $"Hello, {V.name}!") + "</b>", g.sTitle);
-                g.Text(Loc.L($"Чи {a?.name.mn}-д төрсөн {e?.name.mn} {V.age} настай {(V.age >= 18 ? "хүн" : "хүүхэд")}.", $"You are a {V.age}-year-old {e?.name.en} {(V.age >= 18 ? "person" : "child")} born in {a?.name.en}."));
+                g.Text(Loc.L($"Чи {a?.name.mn}-д төрсөн {e?.name.mn} хүн.", $"You are a {e?.name.en} person born in {a?.name.en}."));
                 if (a != null) g.Small(a.fact.ToString());
                 GUILayout.EndVertical(); GUILayout.EndHorizontal();
                 Basar(g, Loc.L("Нутагт хамтдаа явцгаая! Аймгийн паспортоор Монголоор аялж, нутгаа ч бас олоорой.", "Let’s go to Nutag together! Travel Mongolia with your aimag passport and find your home province too."));

@@ -27,7 +27,7 @@ public sealed partial class Game
             var st = new GUIStyle(g.sBtn) { alignment = TextAnchor.UpperCenter, fontSize = g.Ts(13), padding = new RectOffset(Mathf.RoundToInt(g.U(10)), Mathf.RoundToInt(g.U(10)), Mathf.RoundToInt(g.U(10)), Mathf.RoundToInt(g.U(12))) };
             var on = new GUIStyle(st) { normal = g.sPrimary.normal, hover = g.sPrimary.hover };
             string solo = "<b><size=" + g.Ts(17) + ">" + Loc.L("Ганцаараа", "Singleplayer") + "</size></b>\n" + Loc.L("Интернэт хэрэггүй. Хурдан, гацахгүй. Ахиц энэ төхөөрөмж дээр хадгалагдана.", "No internet needed. Fast and smooth. Progress is kept on this device.");
-            string many = "<b><size=" + g.Ts(17) + ">" + Loc.L("Олуулаа", "Multiplayer") + "</size></b>\n" + Loc.L("Сервертэй холбогдож найзуудтайгаа нэг Нутагт тоглоно, бөх барилдаж, хамт гэр барина.", "Connect to the server and play in one village with friends: wrestle, chat and build together.");
+            string many = "<b><size=" + g.Ts(17) + ">" + Loc.L("Олуулаа", "Multiplayer") + "</size></b>\n" + Loc.L("Өрөө нээгээд 6 үсэгтэй кодоо найздаа өгнө, эсвэл найзынхаа кодоор орно. Хамт барилдаж, гэр барина.", "Open a room and give your 6-letter code to friends, or type a friend's code. Wrestle, chat and build together.");
             int picked = -1;
             g.Grid("mode", 2, 200, (i, w) => Mathf.Max(g.U(120), st.CalcHeight(new GUIContent(i == 0 ? solo : many), w) + g.U(46)), (i, r) =>
             {
@@ -36,7 +36,7 @@ public sealed partial class Game
                 GUI.DrawTexture(new Rect(r.center.x - g.U(16), r.y + g.U(10), g.U(32), g.U(32)), g.Tex(i == 0 ? Px.Icon("ui:ger") : Emo.Icon("🤝") ?? Px.Icon("ui:chat")), ScaleMode.ScaleToFit);
                 GUI.Label(new Rect(r.x, r.y + g.U(40), r.width, r.height - g.U(40)), i == 0 ? solo : many, new GUIStyle(st) { normal = { background = null, textColor = st.normal.textColor }, hover = { background = null }, active = { background = null } });
             }, 10);
-            if (picked >= 0) { int k = picked; g.Later(() => { g.SetPlayMode(k == 1); Sfx.Chime(); g.Close(); after?.Invoke(); g.Toast(k == 1 ? Loc.L("Сервертэй холбогдож байна…", "Connecting to the server…") : Loc.L("Ганцаараа тоглож байна", "Playing solo")); }); }
+            if (picked >= 0) { int k = picked; g.Later(() => { g.SetPlayMode(k == 1); Sfx.Chime(); g.Close(); after?.Invoke(); if (k == 1 && after == null) g.Open(new RoomModal()); g.Toast(k == 1 ? Loc.L("Сервертэй холбогдож байна…", "Connecting to the server…") : Loc.L("Ганцаараа тоглож байна", "Playing solo")); }); }
             if (multi && g.net.Online && g.Btn(Loc.L("Өрөө, чат", "Room and chat"), false, 36)) g.Later(() => g.Swap(new RoomModal()));
         }
         public override void Press(Game g) => g.Close();
