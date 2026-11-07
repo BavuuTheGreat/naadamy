@@ -43,7 +43,7 @@ public sealed partial class Game
             if (V.email == "") Item("✉️", Loc.L("Имэйл холбох", "Link an email"), () => g.Open(new EmailLinkModal()));
             Item("⚙️", Loc.L("Тохиргоо", "Settings"), () => g.Open(new SettingsModal()));
             Item("ℹ️", Loc.L("Төслийн тухай", "About the project"), () => g.Open(new AboutPage()));
-            if (g.Btn(Loc.L("Гарах / Профайл солих", "Log out / switch profile"), false, 36)) g.Later(g.LogOut);
+            if (V.email != "" && g.Btn(Loc.L("Гарах / Профайл солих", "Log out / switch profile"), false, 36)) g.Later(g.LogOut); // a guest has no way back in, so no way out
         }
         public override void Press(Game g) => g.Close();
     }

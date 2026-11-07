@@ -391,12 +391,19 @@ public sealed partial class Game
     // ================================================================ log in or register
     public sealed class AuthPage : Page
     {
-        string tab; SaveData picking; readonly List<int> sel = new List<int>(); bool shake;
+        string tab; bool shake;
         // registering
         int step; string name = "", err = ""; const int age = 8; int avatar; readonly Live live = new Live(160, 90);
         // logging in with an email account (server/email-auth.js); acctId: a confirmed account whose steps were left unfinished
-        string email = "", pass = "", acctId = "", acctTicket = ""; bool busy;
-        public AuthPage() { tab = I.App.profiles.Count > 0 ? "login" : "register"; }
+        string email = "", pass = "", pass2 = "", acctId = "", acctTicket = ""; bool busy;
+        bool asGuest; // "Play without an email": the steps make a guest
+        J acct; bool adding; // acct: the login's answer, while choosing one of its 2 players · adding: the steps make the second player
+        readonly SaveData guest; // a player on this device with no email: only an older save can land here, since a guest has no log out
+        public AuthPage()
+        {
+            tab = I.App.profiles.Count > 0 ? "login" : "register";
+            guest = I.App.profiles.Select(SaveData.Load).OrderByDescending(p => p.id == I.App.activeId).FirstOrDefault(p => p.email == "");
+        }
         protected override bool Back => false;
         public override bool CanEscape => false;
         protected override bool Shell => false;
@@ -424,9 +431,9 @@ public sealed partial class Game
             Shadowed(Loc.L("Монгол өв соёлоо гэр бүл, найзуудтайгаа хамт сурцгаая", "Learn Mongolian heritage together with family and friends"), new GUIStyle(g.sCenter) { fontSize = Mathf.RoundToInt(g.U(14)), normal = { textColor = Color.white } }, 22);
             g.Gap(12);
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button(Loc.L("Нэвтрэх", "Log in"), tab == "login" ? g.sBtn : g.sTabOff, GUILayout.MinHeight(g.U(44)))) g.Later(() => { tab = "login"; picking = null; sel.Clear(); err = ""; });
+            if (GUILayout.Button(Loc.L("Нэвтрэх", "Log in"), tab == "login" ? g.sBtn : g.sTabOff, GUILayout.MinHeight(g.U(44)))) g.Later(() => { tab = "login"; adding = false; err = ""; });
             GUILayout.Space(g.U(8));
-            if (GUILayout.Button(Loc.L("Шинээр тоглох", "New player"), tab == "register" ? g.sBtn : g.sTabOff, GUILayout.MinHeight(g.U(44)))) g.Later(() => { tab = "register"; step = 0; err = ""; });
+            if (GUILayout.Button(Loc.L("Шинээр тоглох", "New player"), tab == "register" ? g.sBtn : g.sTabOff, GUILayout.MinHeight(g.U(44)))) g.Later(() => { tab = "register"; adding = false; asGuest = false; step = 0; err = ""; });
             GUILayout.EndHorizontal();
             g.Gap(10);
             GUILayout.BeginVertical(g.sPanel);
@@ -440,7 +447,6 @@ public sealed partial class Game
             GUILayout.EndArea();
         }
         protected override void Body(Game g) { }
-        void PicPad(Game g, Action<string> onPick) => g.PicPad(sel, onPick);
         GUIStyle Box(Game g) => new GUIStyle(g.sBtn) { alignment = TextAnchor.MiddleLeft };
         void Error(Game g) { if (err != "") GUILayout.Label($"<color=#e14b3d>{err}</color>", g.sLabel); }
         public static string Why(J r)
@@ -452,6 +458,7 @@ public sealed partial class Game
                 case "wrong": return Loc.L("Имэйл эсвэл нууц үг буруу байна.", "Wrong email or password.") + (r.Has("left") ? Loc.L($" {r["left"].I} оролдлого үлдлээ.", $" {r["left"].I} tries left.") : "");
                 case "code": return Loc.L($"Код буруу байна. {r["left"].I} оролдлого үлдлээ.", $"Wrong code. {r["left"].I} tries left.");
                 case "expired": return Loc.L("Кодын хугацаа дууссан. Шинэ код аваарай.", "That code has expired. Get a new one.");
+                case "full": return Loc.L("Нэг имэйлд 2 хүртэл профайл байна.", "An email can have up to 2 profiles.");
                 default: return Family.Why(r);
             }
         }
@@ -460,36 +467,65 @@ public sealed partial class Game
             busy = true; err = "";
             g.StartCoroutine(ArenaApi.Post(Family.ServerOf(g, null), body, r => { busy = false; if (r["ok"].B) done(r); else { err = Why(r); Sfx.Bad(); } }, "/api/auth"));
         }
-        /** The players on this device, each behind its secret pictures, then the email login for one from another device. */
+        /** The address and password. The server makes the player at once, and the steps fill it in. */
+        void SignUp(Game g)
+        {
+            GUILayout.Label("<b>" + Loc.L("Имэйлээр бүртгүүлэх", "Sign up with email") + "</b>", g.sLabel);
+            email = g.Field(email, 254, Loc.L("Имэйл хаяг", "Email address")); g.Gap(6);
+            g.Small(Loc.L("Нууц үг (8+ тэмдэгт)", "Password (8+ characters)"));
+            pass = GUILayout.PasswordField(pass, '•', 64, Box(g), GUILayout.MinHeight(g.U(38)));
+            g.Small(Loc.L("Нууц үгээ давтана уу", "Password again"));
+            pass2 = GUILayout.PasswordField(pass2, '•', 64, Box(g), GUILayout.MinHeight(g.U(38))); g.Gap(10);
+            Error(g);
+            if (g.Btn(busy ? "…" : Loc.L("Бүртгүүлэх", "Sign up"), true, 48, !busy)) g.Later(() =>
+            {
+                if (!Family.EmailOk(email.Trim())) { err = Family.Why(J.Parse("{\"reason\":\"email-invalid\"}")); return; }
+                if (pass != pass2) { err = Loc.L("Хоёр нууц үг таарахгүй байна.", "The two passwords don't match."); return; }
+                Ask(g, ArenaApi.Body("register", "email", email.Trim(), "password", pass), r => { acctId = r["id"].S; acctTicket = r["ticket"].S; pass = pass2 = ""; step = 0; });
+            });
+            if (g.Btn(Loc.L("Имэйлгүй тоглох", "Play without an email"), false, 36)) g.Later(() => { asGuest = true; step = 0; err = ""; });
+        }
         void LogIn(Game g)
         {
-            if (picking != null)
+            if (acct != null) { Choose(g); return; }
+            if (guest != null)
             {
-                GUILayout.BeginHorizontal(); g.IconAt(Px.Mascot(picking.avatar), 36); GUILayout.Label($"<b>{picking.name}</b>", g.sTitle); GUILayout.EndHorizontal();
-                g.Small(Loc.L("Нууц 3 зургаа дарааллаар нь дар", "Tap your 3 secret pictures in order"));
-                PicPad(g, code => { if (code == picking.code) g.Enter(picking); else { Sfx.Bad(); sel.Clear(); } });
-                GUILayout.BeginHorizontal();
-                if (g.Btn(Loc.L("Буцах", "Back"), false, 32)) g.Later(() => { picking = null; sel.Clear(); });
-                var who = picking; if (g.Btn(Loc.L("Мартсан? (том хүн)", "Forgot? (grown-up)"), false, 32)) g.Later(() => g.Open(new ParentGate(() => { who.code = ""; who.Save(); g.Enter(who); })));
-                GUILayout.EndHorizontal();
-                return;
-            }
-            if (g.App.profiles.Count > 0)
-            {
-                GUILayout.Label("<b>" + Loc.L("Хэн тоглох вэ?", "Who’s playing?") + "</b>", g.sLabel);
-                foreach (var id in g.App.profiles.ToList())
-                {
-                    var p = SaveData.Load(id);
-                    GUILayout.BeginHorizontal(g.sBtn);
-                    g.IconAt(Px.Mascot(p.avatar), 40);
-                    GUILayout.Label($"<b>{p.name}</b>" + (p.code != "" ? $"\n<size={g.Ts(11)}>{Loc.L("нууцтай", "locked")}</size>" : ""), g.sLabel);
-                    GUILayout.FlexibleSpace();
-                    if (g.SmallBtn(Loc.L("Тоглох", "Play"))) { var pp = p; g.Later(() => { if (pp.code == "") g.Enter(pp); else { picking = pp; sel.Clear(); } }); }
-                    GUILayout.EndHorizontal();
-                }
+                if (g.Btn(Loc.L($"{guest.name}-ээр үргэлжлүүлэх", $"Continue as {guest.name}"), true, 44)) g.Later(() => g.Enter(guest));
                 g.Gap(10);
             }
             EmailLogin(g);
+        }
+        /** After the login: which of the account's players plays, or make the second one. */
+        void Choose(Game g)
+        {
+            GUILayout.Label("<b>" + Loc.L("Профайлаа сонгоно уу", "Choose a profile") + "</b>", g.sLabel);
+            void Row(J p)
+            {
+                GUILayout.BeginHorizontal(g.sBtn);
+                g.IconAt(Px.Mascot(p["avatar"].I), 40);
+                GUILayout.Label($"<b>{p["name"].S}</b>", g.sLabel);
+                GUILayout.FlexibleSpace();
+                if (g.SmallBtn(Loc.L("Тоглох", "Play"))) g.Later(() => Play(g, p));
+                GUILayout.EndHorizontal();
+            }
+            Row(acct);
+            if (acct.Has("second")) Row(acct["second"]);
+            else if (g.Btn(Loc.L("+ 2 дахь профайл нэмэх", "+ Add a second profile"), false, 40)) g.Later(() => { adding = true; tab = "register"; step = 0; name = ""; avatar = 0; err = ""; });
+        }
+        /** Into the game as one player of the login's answer. */
+        void Play(Game g, J a)
+        {
+            string server = Family.ServerOf(g, null), pid = a["id"].S; bool known = g.App.profiles.Contains(pid);
+            var p = SaveData.Load(pid);
+            if (!known) { p.name = a["name"].S; p.age = a["age"].I; p.avatar = a["avatar"].I; p.created = SaveData.DayKey(); }
+            p.ticket = a["ticket"].S; // this device's own ticket
+            p.email = email.Trim();
+            Cloud.Apply(p, a["cloud"]); // character, lessons, badges… from the other device
+            if (string.IsNullOrWhiteSpace(p.server)) p.server = server.Trim();
+            p.Save();
+            if (!known) g.App.profiles.Add(pid);
+            g.App.server = server.Trim(); g.App.Save();
+            g.Enter(p);
         }
         void EmailLogin(Game g)
         {
@@ -502,23 +538,14 @@ public sealed partial class Game
             {
                 pass = "";
                 if (!r["ready"].B) { acctId = r["id"].S; acctTicket = r["ticket"].S; tab = "register"; step = 0; return; } // confirmed, but the steps were left unfinished
-                string server = Family.ServerOf(g, null), pid = r["id"].S; bool known = g.App.profiles.Contains(pid);
-                var p = SaveData.Load(pid);
-                if (!known) { p.name = r["name"].S; p.age = r["age"].I; p.avatar = r["avatar"].I; p.created = SaveData.DayKey(); }
-                p.ticket = r["ticket"].S; // this device's own ticket
-                p.email = email.Trim();
-                Cloud.Apply(p, r["cloud"]); // character, lessons, badges… from the other device
-                if (string.IsNullOrWhiteSpace(p.server)) p.server = server.Trim();
-                p.Save();
-                if (!known) g.App.profiles.Add(pid);
-                g.App.server = server.Trim(); g.App.Save();
-                g.Later(() => g.Enter(p));
+                acct = r;
             }));
         }
         void Basar(Game g, string text) { GUILayout.BeginHorizontal(); g.IconAt(Px.BankharFace(1), 40); g.Gap(10); GUILayout.Label(text, g.sTeach); GUILayout.EndHorizontal(); g.Gap(8); }
         void Register(Game g)
         {
-            g.Steps(step, 3);
+            if (acctId == "" && !adding && !asGuest) { SignUp(g); return; } // the steps come after the address is confirmed
+            g.Steps(step, 2);
             if (step == 0)
             {
                 Basar(g, Loc.L("Вуф! Би Басар. Чиний нэрийг хэн гэдэг вэ?", "Woof! I’m Basar. What’s your name?"));
@@ -526,7 +553,7 @@ public sealed partial class Game
                 if (err != "") GUILayout.Label($"<color=#e14b3d>{err}</color>", g.sLabel);
                 if (g.Btn(Loc.L("Цааш →", "Next →"), true, 54)) g.Later(() => { if (name.Trim() == "") err = Loc.L("Нэрээ бичээрэй", "Please write your name"); else { err = ""; name = name.Trim(); step = 1; } });
             }
-            else if (step == 1)
+            else
             {
                 Basar(g, Loc.L("Өөрийн сахиус амьтнаа сонго! ", "Pick your mascot animal! ") + Profiles.MASCOTS[avatar].fact);
                 for (int r = 0; r < 3; r++)
@@ -541,31 +568,33 @@ public sealed partial class Game
                     }
                     GUILayout.EndHorizontal();
                 }
+                Error(g);
                 GUILayout.BeginHorizontal();
                 if (g.Btn("←")) g.Later(() => step = 0);
-                if (g.Btn(Loc.L("Цааш →", "Next →"), true)) g.Later(() => { step = 2; sel.Clear(); });
+                if (g.Btn(busy ? "…" : Loc.L("Тоглох →", "Play →"), true, 40, !busy)) g.Later(() => Finish(g));
                 GUILayout.EndHorizontal();
             }
-            else
+        }
+        void Finish(Game g)
+        {
+            string server = Family.ServerOf(g, null);
+            void Start(SaveData p, bool account)
             {
-                Basar(g, Loc.L("Сүүлийнх нь: 3 нууц зураг сонгоод профайлаа хамгаал. Дараалал нь чухал шүү!", "Last one: choose 3 secret pictures to protect your profile. The order matters!"));
-                void Finish(string code)
-                {
-                    string server = Family.ServerOf(g, null);
-                    bool account = acctId != ""; // otherwise a guest: the id and ticket are made here, and the server learns them on the first connect
-                    var p = account ? SaveData.Create(name, age, avatar, code, acctId, acctTicket) : SaveData.Create(name, age, avatar, code);
-                    p.server = server.Trim(); if (account) p.email = email.Trim(); p.Save();
-                    g.App.profiles.Add(p.id); g.App.server = server.Trim(); g.App.Save();
-                    // kept on the server for the next device; if this is lost, the next login asks these steps again
-                    if (account) g.StartCoroutine(ArenaApi.Post(server, ProfileBody(p), r => { }, "/api/auth"));
-                    g.Enter(p);
-                }
-                PicPad(g, Finish);
-                GUILayout.BeginHorizontal();
-                if (g.Btn("←")) g.Later(() => { step = 1; sel.Clear(); });
-                if (g.Btn(Loc.L("Алгасах", "Skip"))) g.Later(() => Finish(""));
-                GUILayout.EndHorizontal();
+                p.server = server.Trim(); if (account) p.email = email.Trim(); p.Save();
+                g.App.profiles.Add(p.id); g.App.server = server.Trim(); g.App.Save();
+                g.Enter(p);
             }
+            if (adding)
+            {
+                string body = "{\"act\":\"add\",\"id\":" + J.Quote(acct["id"].S) + ",\"ticket\":" + J.Quote(acct["ticket"].S) + ",\"name\":" + J.Quote(name) + ",\"age\":" + age + ",\"avatar\":" + avatar + "}";
+                Ask(g, body, r => Start(SaveData.Create(name, age, avatar, "", r["id"].S, r["ticket"].S), true));
+                return;
+            }
+            if (acctId == "") { Start(SaveData.Create(name, age, avatar, ""), false); return; } // a guest: the id and ticket are made here, and the server learns them on the first connect
+            var p = SaveData.Create(name, age, avatar, "", acctId, acctTicket);
+            // kept on the server for the next device; if this is lost, the next login asks these steps again
+            g.StartCoroutine(ArenaApi.Post(server, ProfileBody(p), r => { }, "/api/auth"));
+            Start(p, true);
         }
         public override void Closed(Game g) { }
     }
@@ -573,10 +602,10 @@ public sealed partial class Game
     /** What POST /api/auth keeps for the next device: the name and mascot. */
     static string ProfileBody(SaveData p) => "{\"act\":\"profile\",\"id\":" + J.Quote(p.id) + ",\"ticket\":" + J.Quote(p.ticket) + ",\"name\":" + J.Quote(p.name) + ",\"age\":" + p.age + ",\"avatar\":" + p.avatar + "}";
 
-    /** A guest links an email: the address and password, then the mailed code. The player stays the same, and can now log in on any device. */
+    /** A guest links an email: the address and password. The player stays the same, and can now log in on any device. */
     public sealed class EmailLinkModal : Modal
     {
-        string email = "", pass = "", pass2 = "", mailCode = "", err = ""; bool coded, busy;
+        string email = "", pass = "", pass2 = "", err = ""; bool busy;
         void Ask(Game g, string body, Action<J> done)
         {
             busy = true; err = "";
@@ -587,40 +616,25 @@ public sealed partial class Game
             var box = new GUIStyle(g.sBtn) { alignment = TextAnchor.MiddleLeft };
             void Error() { if (err != "") GUILayout.Label($"<color=#e14b3d>{err}</color>", g.sLabel); }
             g.Title(Loc.L("Имэйл холбох", "Link an email"));
-            if (!coded)
-            {
-                g.Small(Loc.L("Холбовол өөр төхөөрөмж дээр нэвтэрч, зоос, XP, хувцсаа авч болно.", "Link one to log in on another device and keep your coins, XP and clothes."));
-                email = g.Field(email, 254, Loc.L("Имэйл хаяг", "Email address")); g.Gap(6);
-                g.Small(Loc.L("Нууц үг (8+ тэмдэгт)", "Password (8+ characters)"));
-                pass = GUILayout.PasswordField(pass, '•', 64, box, GUILayout.MinHeight(g.U(38)));
-                g.Small(Loc.L("Нууц үгээ давтана уу", "Password again"));
-                pass2 = GUILayout.PasswordField(pass2, '•', 64, box, GUILayout.MinHeight(g.U(38))); g.Gap(10);
-                Error();
-                if (g.Btn(busy ? "…" : Loc.L("Код илгээх", "Send the code"), true, 48, !busy)) g.Later(() =>
-                {
-                    if (!Family.EmailOk(email.Trim())) { err = Family.Why(J.Parse("{\"reason\":\"email-invalid\"}")); return; }
-                    if (pass != pass2) { err = Loc.L("Хоёр нууц үг таарахгүй байна.", "The two passwords don't match."); return; }
-                    Ask(g, ArenaApi.Body("signup", "email", email.Trim(), "password", pass), r => { coded = true; mailCode = ""; });
-                });
-                return;
-            }
-            g.Small(Loc.L($"{email.Trim()} хаяг руу 6 оронтой код илгээлээ. Код 15 минут хүчинтэй.", $"We sent a 6-digit code to {email.Trim()}. It works for 15 minutes."));
-            mailCode = new string(g.Field(mailCode, 6, "123456").Where(char.IsDigit).ToArray()); g.Gap(10);
+            g.Small(Loc.L("Холбовол өөр төхөөрөмж дээр нэвтэрч, зоос, XP, хувцсаа авч болно.", "Link one to log in on another device and keep your coins, XP and clothes."));
+            email = g.Field(email, 254, Loc.L("Имэйл хаяг", "Email address")); g.Gap(6);
+            g.Small(Loc.L("Нууц үг (8+ тэмдэгт)", "Password (8+ characters)"));
+            pass = GUILayout.PasswordField(pass, '•', 64, box, GUILayout.MinHeight(g.U(38)));
+            g.Small(Loc.L("Нууц үгээ давтана уу", "Password again"));
+            pass2 = GUILayout.PasswordField(pass2, '•', 64, box, GUILayout.MinHeight(g.U(38))); g.Gap(10);
             Error();
-            if (g.Btn(busy ? "…" : Loc.L("Баталгаажуулах", "Confirm"), true, 48, !busy && mailCode.Length == 6)) g.Later(() =>
+            if (g.Btn(busy ? "…" : Loc.L("Холбох", "Link"), true, 48, !busy)) g.Later(() =>
             {
+                if (!Family.EmailOk(email.Trim())) { err = Family.Why(J.Parse("{\"reason\":\"email-invalid\"}")); return; }
+                if (pass != pass2) { err = Loc.L("Хоёр нууц үг таарахгүй байна.", "The two passwords don't match."); return; }
                 var V = g.V; SaveData.EnsureTicket(V);
-                Ask(g, ArenaApi.Body("verify", "email", email.Trim(), "code", mailCode, "id", V.id, "ticket", V.ticket), r =>
+                Ask(g, ArenaApi.Body("register", "email", email.Trim(), "password", pass, "id", V.id, "ticket", V.ticket), r =>
                 {
                     V.email = email.Trim(); V.Save(); pass = pass2 = "";
                     g.StartCoroutine(ArenaApi.Post(Family.ServerOf(g, V), ProfileBody(V), a => { }, "/api/auth"));
                     g.Toast(Loc.L("Имэйл холбогдлоо!", "Email linked!")); g.Close();
                 });
             });
-            GUILayout.BeginHorizontal();
-            if (g.Btn("←", false, 36)) g.Later(() => { coded = false; err = ""; });
-            if (g.Btn(Loc.L("Дахин илгээх", "Send again"), false, 36, !busy)) g.Later(() => Ask(g, ArenaApi.Body("signup", "email", email.Trim(), "password", pass), r => g.Toast(Loc.L("Шинэ код илгээлээ", "New code sent"))));
-            GUILayout.EndHorizontal();
         }
     }
 }
