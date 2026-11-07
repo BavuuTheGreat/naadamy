@@ -89,14 +89,16 @@ A grown-up can add an email for the family and get a **weekly report** of each c
 
 | `act` | Fields | Answer when `ok` |
 |---|---|---|
+| `register` | `email, password`, and `id, ticket` for a guest | `{ ok, id, ticket, ready: false }`: the account at once, with no mail, so the address is not proved. The game uses this. Refused: `email-invalid`, `weak-password`, `taken`, `identity` |
 | `signup` | `email, password` | `{ ok }`: a 6-digit code is mailed. Refused: `email-invalid`, `weak-password` (8–64 characters), `taken`, `busy` (3 mails an hour per address), `email-failed`, `email-off` |
 | `verify` | `email, code` | `{ ok, id, ticket, ready: false }`: the account and its player exist. Refused: `code` with `left`, `expired` (15 minutes or 5 wrong tries), `taken` |
-| `login` | `email, password` | `{ ok, id, ticket, ready, name, age, avatar, cloud }`: a new device ticket. Refused: `wrong` (with `left` for a known address), `locked` with `wait`, `erased` |
-| `profile` | `id, ticket, name, age, avatar` | `{ ok }`: sets `ready`. Until then the game asks the name, mascot and pictures again after a login |
+| `login` | `email, password` | `{ ok, id, ticket, ready, name, age, avatar, cloud, second? }`: a new device ticket. `second` is `{ id, ticket, name, age, avatar, cloud }` when the account has a second player. Refused: `wrong` (with `left` for a known address), `locked` with `wait`, `erased` |
+| `profile` | `id, ticket, name, age, avatar` | `{ ok }`: sets `ready`. Until then the game asks the name and mascot again after a login |
+| `add` | `id, ticket, name, age, avatar` | `{ ok, id, ticket }`: the account's first player (`id, ticket`) makes the second. An account holds at most 2 players. Refused: `full`, `identity`, `invalid` |
 
 A guest (a player made on the device, with no account) links an email with `signup`, then `verify` with its own `id, ticket` added: the account then belongs to that player, and `verify` answers with the same `id` and `ticket`. Refused: `identity` for a wrong ticket, `taken` when the player already has an email.
 
-The 3 secret pictures stay on the device. Without `RESEND_API_KEY` and `EMAIL_FROM` the code is printed to the server log, except in production, where `signup` answers `email-off`.
+Without `RESEND_API_KEY` and `EMAIL_FROM` the code is printed to the server log, except in production, where `signup` answers `email-off`.
 
 ## Voice clips (memory book)
 
@@ -118,6 +120,14 @@ A memory's voice clip (Unity's `MemoryForm`, a WAV from `Wav.Save`) is kept on t
 - **Gone with the family:** `erase` (and `remove` of its last child, which deletes the family) drops the family's records in the same transaction (or file write), then deletes its clips from Storage; on PostgreSQL every instance does it again when it hears `family-erased` (twice is harmless). Taking out one child keeps the clips they made (they are the family's).
 - Answers other than the clip are JSON `{ ok: false, reason }` with `cache-control: no-store`: `invalid` (400), `identity` (403), `pin` / `pin-locked` / `needs-pin` (403, as in `check-pin`), `no-family` / `no-clip` (404), `method` (405), `timeout` (408), `taken` (409), `too-big` (413), `not-wav` (415), `busy` (429), `storage` (500), `storage-off` (503), `quota` / `storage-full` (507).
 - A browser page calling it needs an allowed origin (CORS allows `PUT`, `DELETE` and the `x-*` headers above). The service role key is never sent or logged.
+
+## Saving while playing alone
+
+`POST /api/save` (`server/server.js`): JSON, at most 32 KB, 60 requests a minute per address (`429 busy`). Singleplayer opens no WebSocket, so the Unity game sends its progress here every 30 seconds and on log out, for players with an email.
+
+| Fields | Answer when `ok` |
+|---|---|
+| `id, ticket`, and `op, coins, xp, owned, rod` as in `sync`, and/or `cloud` as in `cloud-save` | `{ ok, day, out }`: `out` holds what the socket would have sent, `sync-result` and/or `cloud`. Refused: `identity` or `erased` (403) |
 
 ## Private rooms
 

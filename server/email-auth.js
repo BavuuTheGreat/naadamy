@@ -5,7 +5,7 @@
    `ready` is false: a login then goes on with those steps. Passwords are kept only as salted scrypt hashes; a code only as a
    hash, in memory, for 15 minutes and 5 tries; 5 wrong passwords lock the account for 15 minutes, doubling, at most a day.
    A guest (a player made on the device, with no email) sends its `id` and `ticket` with `verify`: the account then belongs to
-   that player, so nothing is lost.
+   that player, so nothing is lost. An account holds at most 2 players: `add` makes the second, and `login` answers with both.
    Mail goes through Resend as in parent-email.js; without it the codes are printed to the log, except in production, where
    signing up is off. See docs/PROTOCOL.md, "Email accounts". */
 
@@ -46,12 +46,25 @@ function jsonAccounts(dataDir) {
       write(all); return true;
     },
     async update(email, fields) { const all = read(); if (Object.hasOwn(all, email)) { put(all, email, { ...all[email], ...fields }); write(all); } },
+    async byId(id) { const all = read(), email = Object.keys(all).find((e) => all[e].id === id); return email ? { email, ...all[email] } : null; },
+    async second(email) { const all = read(); return (Object.hasOwn(all, email) && all[email].second) || null; },
+    async addSecond(email, player) {
+      const all = read();
+      if (!Object.hasOwn(all, email) || all[email].second) return false;
+      put(all, email, { ...all[email], second: player }); write(all); return true;
+    },
     async setProfile(id, fields) {
       const all = read(), email = Object.keys(all).find((e) => all[e].id === id);
       if (!email) return false;
       put(all, email, { ...all[email], ...fields, ready: true }); write(all); return true;
     },
-    async forget(ids) { const gone = new Set(ids), all = read(); let changed = false; for (const e of Object.keys(all)) if (gone.has(all[e].id)) { delete all[e]; changed = true; } if (changed) write(all); },
+    async forget(ids) {
+      const gone = new Set(ids), all = read(); let changed = false;
+      for (const e of Object.keys(all)) {
+        if (gone.has(all[e].id)) { delete all[e]; changed = true; } else if (all[e].second && gone.has(all[e].second.id)) { all[e].second = null; changed = true; }
+      }
+      if (changed) write(all);
+    },
   };
 }
 
@@ -75,9 +88,28 @@ function pgAccounts(pool) {
           until_ms bigint NOT NULL DEFAULT 0,
           created_at timestamptz NOT NULL DEFAULT now()
         )`);
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS naadamy_email_second (
+          email text PRIMARY KEY REFERENCES naadamy_email_accounts (email) ON DELETE CASCADE,
+          player_id text NOT NULL UNIQUE REFERENCES naadamy_identities (id) ON DELETE CASCADE,
+          name text NOT NULL,
+          age integer NOT NULL,
+          avatar integer NOT NULL,
+          created_at timestamptz NOT NULL DEFAULT now()
+        )`); // one row per email at most: the database itself keeps an account to 2 players
       await pool.query('ALTER TABLE naadamy_email_accounts ENABLE ROW LEVEL SECURITY'); // closed to Supabase's REST API, like the other tables
+      await pool.query('ALTER TABLE naadamy_email_second ENABLE ROW LEVEL SECURITY');
     },
     async byEmail(email) { const r = await pool.query('SELECT * FROM naadamy_email_accounts WHERE email = $1', [email]); return row(r.rows[0]) || null; },
+    async byId(id) { const r = await pool.query('SELECT * FROM naadamy_email_accounts WHERE player_id = $1', [id]); return row(r.rows[0]) || null; },
+    async second(email) {
+      const r = await pool.query('SELECT player_id, name, age, avatar FROM naadamy_email_second WHERE email = $1', [email]);
+      return r.rows[0] ? { id: r.rows[0].player_id, name: r.rows[0].name, age: r.rows[0].age, avatar: r.rows[0].avatar } : null;
+    },
+    async addSecond(email, { id, name, age, avatar }) {
+      const r = await pool.query('INSERT INTO naadamy_email_second (email, player_id, name, age, avatar) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING RETURNING email', [email, id, name, age, avatar]);
+      return r.rows.length > 0;
+    },
     async create({ email, id, hash, salt }) {
       const r = await pool.query('INSERT INTO naadamy_email_accounts (email, player_id, pass_hash, pass_salt) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING RETURNING email', [email, id, hash, salt]);
       return r.rows.length > 0;
@@ -165,6 +197,22 @@ module.exports = function createEmailAuth(roomStore, { dataDir, cloudOf = async 
     return { ok: true, id, ticket, ready: false };
   }
 
+  /** The account at once, with no mail: the address is not proved to be this person's. A guest sends its `id` and `ticket`. */
+  async function register(message) {
+    const email = emailText(message.email);
+    if (!email) return { ok: false, reason: 'email-invalid' };
+    if (!passwordOk(message.password)) return { ok: false, reason: 'weak-password' };
+    const guest = message.id !== undefined || message.ticket !== undefined;
+    const guestId = String(message.id || ''), guestTicket = String(message.ticket || '');
+    if (guest && (!PLAYER_ID.test(guestId) || !PLAYER_TICKET.test(guestTicket) || !(await roomStore.authenticatePlayer(guestId, guestTicket)))) return { ok: false, reason: 'identity' };
+    if (await accounts.byEmail(email)) return { ok: false, reason: 'taken' };
+    const { hash, salt } = await passwordRecord(message.password);
+    const id = guest ? guestId : 'p' + crypto.randomBytes(8).toString('hex'), ticket = guest ? guestTicket : crypto.randomBytes(32).toString('hex');
+    if (!guest && !(await roomStore.authenticatePlayer(id, ticket))) return { ok: false, reason: 'storage' }; // the first ticket of an id makes its identity
+    if (!(await accounts.create({ email, id, hash, salt }))) return { ok: false, reason: 'taken' };
+    return { ok: true, id, ticket, ready: false };
+  }
+
   async function login(message) {
     const email = emailText(message.email);
     if (!email || !passwordOk(message.password)) return { ok: false, reason: 'wrong' };
@@ -183,18 +231,47 @@ module.exports = function createEmailAuth(roomStore, { dataDir, cloudOf = async 
     if (await roomStore.isErased(account.id)) return { ok: false, reason: 'erased' };
     const ticket = crypto.randomBytes(32).toString('hex'); // this device's own ticket for the player
     await roomStore.addDeviceTicket(account.id, ticket);
-    return { ok: true, id: account.id, ticket, ready: account.ready, name: account.name, age: account.age, avatar: account.avatar, cloud: await cloudOf(account.id) };
+    const answer = { ok: true, id: account.id, ticket, ready: account.ready, name: account.name, age: account.age, avatar: account.avatar, cloud: await cloudOf(account.id) };
+    const second = await accounts.second(email);
+    if (second && !(await roomStore.isErased(second.id))) {
+      const secondTicket = crypto.randomBytes(32).toString('hex');
+      await roomStore.addDeviceTicket(second.id, secondTicket);
+      answer.second = { ...second, ticket: secondTicket, cloud: await cloudOf(second.id) };
+    }
+    return answer;
+  }
+
+  /** The name, age and mascot in a message, or null when one of them is not valid. */
+  function profileFields(message) {
+    const name = typeof message.name === 'string' ? message.name.replace(/[<>]/g, '').trim().slice(0, 20) : '', age = message.age, avatar = message.avatar;
+    if (!name || !Number.isInteger(age) || age < 3 || age > 120 || !Number.isInteger(avatar) || avatar < 0 || avatar > 11) return null;
+    return { name, age, avatar };
   }
 
   async function profile(message) {
     const id = String(message.id || ''), ticket = String(message.ticket || '');
     if (!PLAYER_ID.test(id) || !PLAYER_TICKET.test(ticket) || !(await roomStore.authenticatePlayer(id, ticket))) return { ok: false, reason: 'identity' };
-    const name = typeof message.name === 'string' ? message.name.replace(/[<>]/g, '').trim().slice(0, 20) : '', age = message.age, avatar = message.avatar;
-    if (!name || !Number.isInteger(age) || age < 3 || age > 120 || !Number.isInteger(avatar) || avatar < 0 || avatar > 11) return { ok: false, reason: 'invalid' };
-    return (await accounts.setProfile(id, { name, age, avatar })) ? { ok: true } : { ok: false, reason: 'identity' };
+    const fields = profileFields(message);
+    if (!fields) return { ok: false, reason: 'invalid' };
+    return (await accounts.setProfile(id, fields)) ? { ok: true } : { ok: false, reason: 'identity' };
   }
 
-  const ACTS = { signup, verify, login, profile };
+  /** The account's first player (id and ticket) makes the second one. */
+  async function add(message) {
+    const owner = String(message.id || ''), ownerTicket = String(message.ticket || '');
+    if (!PLAYER_ID.test(owner) || !PLAYER_TICKET.test(ownerTicket) || !(await roomStore.authenticatePlayer(owner, ownerTicket))) return { ok: false, reason: 'identity' };
+    const fields = profileFields(message);
+    if (!fields) return { ok: false, reason: 'invalid' };
+    const account = await accounts.byId(owner);
+    if (!account) return { ok: false, reason: 'identity' };
+    if (await accounts.second(account.email)) return { ok: false, reason: 'full' };
+    const id = 'p' + crypto.randomBytes(8).toString('hex'), ticket = crypto.randomBytes(32).toString('hex');
+    if (!(await roomStore.authenticatePlayer(id, ticket))) return { ok: false, reason: 'storage' };
+    if (!(await accounts.addSecond(account.email, { id, ...fields }))) return { ok: false, reason: 'full' };
+    return { ok: true, id, ticket };
+  }
+
+  const ACTS = { signup, verify, register, login, profile, add };
   function handle(req, res) {
     const reply = (status, body) => { res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }); res.end(JSON.stringify(body)); };
     if (req.method !== 'POST') return reply(405, { ok: false, reason: 'method' });

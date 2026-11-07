@@ -92,6 +92,40 @@ try {
   assert.deepEqual(await api({ act: 'signup', email: 'second@example.com', password }), { ok: true });
   assert.deepEqual(await api({ act: 'verify', email: 'second@example.com', code: lastCode(), ...guest }), { ok: false, reason: 'taken' });
 
+  // an account holds 2 players: the first adds the second, and login brings both
+  const twin = { name: 'Twin', age: 8, avatar: 2 };
+  assert.deepEqual(await api({ act: 'add', id: guest.id, ticket: 'b'.repeat(64), ...twin }), { ok: false, reason: 'identity' });
+  assert.deepEqual(await api({ act: 'add', ...guest, name: '', age: 8, avatar: 2 }), { ok: false, reason: 'invalid' });
+  const added = await api({ act: 'add', ...guest, ...twin });
+  assert.equal(added.ok, true);
+  assert.notEqual(added.id, guest.id);
+  assert.deepEqual(await api({ act: 'add', ...guest, ...twin }), { ok: false, reason: 'full' }, 'a third player is refused');
+  assert.deepEqual(await api({ act: 'add', id: added.id, ticket: added.ticket, ...twin }), { ok: false, reason: 'identity' }, 'only the first player adds');
+  const both = await api({ act: 'login', email: guestMail, password });
+  assert.equal(both.id, guest.id);
+  assert.equal(both.second.id, added.id);
+  assert.equal(both.second.name, 'Twin');
+  assert.deepEqual(both.second.cloud, { for: added.id });
+  assert.equal(await store.authenticatePlayer(added.id, both.second.ticket), true, 'the new device has its own ticket for the second player');
+  await auth.forget([added.id]);
+  assert.equal((await api({ act: 'login', email: guestMail, password })).second, undefined);
+
+  // register: the account at once, with no mail, also where mail is off
+  const sent = mails.length;
+  assert.deepEqual(await api({ act: 'register', email: 'nope', password }), { ok: false, reason: 'email-invalid' });
+  assert.deepEqual(await api({ act: 'register', email: 'quick@example.com', password: 'short' }), { ok: false, reason: 'weak-password' });
+  const quick = await api({ act: 'register', email: 'Quick@Example.com', password });
+  assert.equal(quick.ok, true);
+  assert.equal(quick.ready, false);
+  assert.deepEqual(await api({ act: 'register', email: 'quick@example.com', password }), { ok: false, reason: 'taken' });
+  assert.equal((await api({ act: 'login', email: 'quick@example.com', password })).id, quick.id);
+  const walker = { id: 'guest-walker', ticket: 'c'.repeat(64) };
+  assert.equal(await store.authenticatePlayer(walker.id, walker.ticket), true);
+  assert.deepEqual(await api({ act: 'register', email: 'walker@example.com', password, id: walker.id, ticket: 'd'.repeat(64) }), { ok: false, reason: 'identity' });
+  assert.deepEqual(await api({ act: 'register', email: 'walker@example.com', password, ...walker }), { ok: true, ...walker, ready: false });
+  assert.deepEqual(await api({ act: 'register', email: 'walker2@example.com', password, ...walker }), { ok: false, reason: 'taken' }, 'a player has one email');
+  assert.equal(mails.length, sent, 'nothing was mailed');
+
   await auth.forget([made.id]);
   assert.deepEqual(await api({ act: 'login', email, password }), { ok: false, reason: 'wrong' });
   console.log('email-auth: all passed');

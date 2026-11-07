@@ -108,6 +108,7 @@ function serveStatic(req, res) {
   if (url.pathname === '/api/account') return accounts.handle(req, res);
   if (url.pathname === '/api/auth') return emailAuth.handle(req, res);
   if (url.pathname === '/api/room') return roomCodes.handle(req, res);
+  if (url.pathname === '/api/save') return handleSaveRequest(req, res);
   if (url.pathname === '/api/voice' || url.pathname.startsWith('/api/voice/')) return voice.handle(req, res, url.pathname);
   if (url.pathname === '/api/email/confirm' || url.pathname === '/api/email/stop') return parentEmail.handle(req, res, url);
   if (adminStats.handle(req, res, url.pathname)) return;
@@ -844,6 +845,41 @@ async function handleSync(conn, message) {
     console.error('Could not sync player progress:', error.message);
     reply({ accepted: false, reason: 'storage' });
   }
+}
+
+// ---------------------------------------------------------------- saving with no socket: POST /api/save
+// Playing alone opens no WebSocket, so the game sends the same upload as `sync` and `cloud-save` here, with the device ticket.
+const saveHits = new Map();
+function saveAllowed(ip) {
+  const t = Date.now(), h = saveHits.get(ip);
+  if (!h || t - h.at > 60_000) { saveHits.set(ip, { at: t, n: 1 }); if (saveHits.size > 5000) for (const [k, v] of saveHits) if (t - v.at > 60_000) saveHits.delete(k); return true; }
+  return ++h.n <= 60;
+}
+function handleSaveRequest(req, res) {
+  const reply = (status, body) => { res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }); res.end(JSON.stringify(body)); };
+  if (req.method !== 'POST') return reply(405, { ok: false, reason: 'method' });
+  let raw = '';
+  req.on('data', (chunk) => { raw += chunk; if (raw.length > MAX_PAYLOAD * 2) req.destroy(); });
+  req.on('end', async () => {
+    let m; try { m = JSON.parse(raw); } catch { return reply(400, { ok: false, reason: 'invalid' }); }
+    if (!m || typeof m !== 'object') return reply(400, { ok: false, reason: 'invalid' });
+    if (!saveAllowed(clientIp(req))) return reply(429, { ok: false, reason: 'busy' });
+    const id = String(m.id || '');
+    try {
+      if (!/^[\w-]{4,24}$/.test(id) || !(await roomStore.authenticatePlayer(id, m.ticket))) {
+        return reply(403, { ok: false, reason: (await roomStore.isErased(id)) ? 'erased' : 'identity' });
+      }
+      const account = await roomStore.getAccount(id, walletSeed(), inventorySeed());
+      const out = []; // the same answers the socket would send, for the game to read the same way
+      const conn = { player: { id }, room: null, wallet: account.wallet, inventory: account.inventory, send: (message) => out.push(message) };
+      if (m.op !== undefined) await handleSync(conn, m);
+      if (m.cloud && typeof m.cloud === 'object') out.push({ t: 'cloud', cloud: await mergeCloudSave(id, m.cloud) });
+      reply(200, { ok: true, day: villageDay(), out });
+    } catch (error) {
+      console.error('Could not save progress:', error.message);
+      reply(500, { ok: false, reason: 'storage' });
+    }
+  });
 }
 
 function villageDay(date = new Date()) {
