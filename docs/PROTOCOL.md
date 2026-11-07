@@ -121,6 +121,14 @@ A memory's voice clip (Unity's `MemoryForm`, a WAV from `Wav.Save`) is kept on t
 - Answers other than the clip are JSON `{ ok: false, reason }` with `cache-control: no-store`: `invalid` (400), `identity` (403), `pin` / `pin-locked` / `needs-pin` (403, as in `check-pin`), `no-family` / `no-clip` (404), `method` (405), `timeout` (408), `taken` (409), `too-big` (413), `not-wav` (415), `busy` (429), `storage` (500), `storage-off` (503), `quota` / `storage-full` (507).
 - A browser page calling it needs an allowed origin (CORS allows `PUT`, `DELETE` and the `x-*` headers above). The service role key is never sent or logged.
 
+## Saving while playing alone
+
+`POST /api/save` (`server/server.js`): JSON, at most 32 KB, 60 requests a minute per address (`429 busy`). Singleplayer opens no WebSocket, so the Unity game sends its progress here every 30 seconds and on log out, for players with an email.
+
+| Fields | Answer when `ok` |
+|---|---|
+| `id, ticket`, and `op, coins, xp, owned, rod` as in `sync`, and/or `cloud` as in `cloud-save` | `{ ok, day, out }`: `out` holds what the socket would have sent, `sync-result` and/or `cloud`. Refused: `identity` or `erased` (403) |
+
 ## Private rooms
 
 `POST /api/room` (`server/room-codes.js`): JSON, 30 requests a minute per address (`429 busy`).

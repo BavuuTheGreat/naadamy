@@ -214,6 +214,7 @@ public sealed class Net
             float dx = o.x - o.px, dy = o.y - o.py, d = Mathf.Sqrt(dx * dx + dy * dy); o.moving = d > 0.02f;
             if (d > 6) { o.px = o.x; o.py = o.y; } else { float a = Mathf.Min(1, dt * 10); o.px += dx * a; o.py += dy * a; }
         }
+        if (!Live && status == "solo" && g.V != null && (saveT += dt) > 30) { saveT = 0; SaveAlone(g); }
         if (!Online || g.V == null) return;
         if (syncing && Time.realtimeSinceStartup - syncSentAt > 8) syncing = false; // no answer: the same upload goes again later
         if (syncAt > 0 && Time.realtimeSinceStartup > syncAt) { syncAt = -1; Sync(g); }
@@ -400,6 +401,13 @@ public sealed class Net
     void Sync(Game g)
     {
         var V = g.V; if (!Online || V == null || syncing) return;
+        string fields = SyncFields(V); if (fields == null) return;
+        syncing = true; syncSentAt = Time.realtimeSinceStartup;
+        Send("{" + Obj("t", "sync") + "," + fields + "}");
+    }
+    /** What this device earned since the server's wallet, as the fields of a `sync` (the same op until it is answered); null when nothing. */
+    string SyncFields(SaveData V)
+    {
         Base(V);
         if (string.IsNullOrEmpty(V.syncOp))
         {
@@ -407,12 +415,33 @@ public sealed class Net
             int coins = V.coins - V.srvCoins, xp = Math.Max(0, V.xp - V.srvXp);
             if (capped) { coins = Math.Min(0, coins); xp = 0; }
             bool items = V.owned.Exists(o => !V.srvOwned.Contains(o)) || V.rod > V.srvRod;
-            if (coins == 0 && xp == 0 && !items) return;
+            if (coins == 0 && xp == 0 && !items) return null;
             V.syncOp = NewOp(); V.syncCoins = coins; V.syncXp = xp; V.Save();
         }
-        syncing = true; syncSentAt = Time.realtimeSinceStartup;
-        Send("{" + Obj("t", "sync", "op", V.syncOp) + "," + Raw("coins", V.syncCoins.ToString()) + "," + Raw("xp", V.syncXp.ToString())
-            + "," + Raw("owned", "[" + string.Join(",", V.owned.Select(Q)) + "]") + "," + Raw("rod", V.rod.ToString()) + "}");
+        return Obj("op", V.syncOp) + "," + Raw("coins", V.syncCoins.ToString()) + "," + Raw("xp", V.syncXp.ToString())
+            + "," + Raw("owned", "[" + string.Join(",", V.owned.Select(Q)) + "]") + "," + Raw("rod", V.rod.ToString());
+    }
+    /** Playing alone opens no socket: every 30 seconds (and on log out) the same upload goes to POST /api/save, and its answers are read as if
+     *  they came over the socket. Nothing goes when offline; the next try sends the same op again. */
+    float saveT = 25; bool saving;
+    public void SaveAlone(Game g)
+    {
+        var V = g.V; if (V == null || string.IsNullOrEmpty(V.email) || saving) return;
+        string server = Family.ServerOf(g, V); if (string.IsNullOrEmpty(server)) return;
+        SaveData.EnsureTicket(V);
+        if (string.IsNullOrEmpty(serverDay)) serverDay = SaveData.DayKey(); // capDay and serverDay both empty would read as capped
+        string fields = SyncFields(V), cloud = Cloud.Of(V); bool cloudNew = cloud != cloudSent;
+        if (fields == null && !cloudNew) return;
+        string body = "{" + Obj("id", V.id, "ticket", V.ticket) + (fields != null ? "," + fields : "") + (cloudNew ? "," + Raw("cloud", cloud) : "") + "}";
+        saving = true; if (fields != null) { syncing = true; syncSentAt = Time.realtimeSinceStartup; }
+        g.StartCoroutine(ArenaApi.Post(server, body, r =>
+        {
+            saving = false; syncing = false;
+            if (!r["ok"].B) return;
+            if (cloudNew) cloudSent = cloud;
+            if (!string.IsNullOrEmpty(r["day"].S)) serverDay = r["day"].S;
+            foreach (var m in r["out"]) Handle(g, m);
+        }, "/api/save"));
     }
     /** Take a server wallet while keeping what this device has not uploaded yet. `ac`/`ax`: what an upload just added. An older wallet than one
      *  already seen only takes that off. */
