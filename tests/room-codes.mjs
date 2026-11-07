@@ -1,5 +1,6 @@
-// Private rooms: a player opens a room and friends join with its 6-letter code; a wrong code is refused, NUTAG still works
-// for released builds, and an opened room survives a restart. Runs a real server over HTTP and WebSocket with the JSON store.
+// Private rooms: a player opens a room and friends join with its 6-letter code; a wrong code is refused, 10 of them lock the
+// address for 5 minutes, NUTAG still works for released builds, and an opened room survives a restart. Runs a real server over
+// HTTP and WebSocket with the JSON store.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
@@ -7,6 +8,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import createRoomCodes from '../server/room-codes.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = mkdtempSync(join(tmpdir(), 'naadamy-room-codes-'));
@@ -43,6 +45,23 @@ function join_(port, room, who) {
   });
 }
 
+// the lock's clock, without a server
+{
+  let t = 1_000_000;
+  const codes = createRoomCodes({}, { now: () => t });
+  for (let i = 0; i < 9; i++) assert.equal(codes.wrongCode('a'), 0, 'nine wrong codes do not lock');
+  assert.equal(codes.wrongCode('a'), 300, 'the tenth locks for 5 minutes');
+  assert.equal(codes.lockedFor('b'), 0, 'another address is not locked');
+  t += 299_000;
+  assert.equal(codes.lockedFor('a'), 1);
+  t += 1_000;
+  assert.equal(codes.lockedFor('a'), 0, 'free again after 5 minutes');
+  assert.equal(codes.wrongCode('a'), 0, 'and the count starts over');
+  for (let i = 0; i < 8; i++) codes.wrongCode('c');
+  t += 300_001;
+  assert.equal(codes.wrongCode('c'), 0, 'old wrong codes are forgotten');
+}
+
 let running;
 try {
   running = await start();
@@ -65,9 +84,18 @@ try {
   const typo = opened.code === 'AAAAAA' ? 'BBBBBB' : 'AAAAAA';
   const wrong = await join_(running.port, typo, stranger);
   assert.deepEqual(wrong.message, { t: 'error', why: 'no-room' });
-  const closing = new Promise((done) => { wrong.socket.onclose = done; });
-  for (let i = 0; i < 4; i++) wrong.socket.send(JSON.stringify({ t: 'join', room: typo, ...stranger, name: 'x', look: {} }));
-  await closing; // five wrong codes end the connection
+  const answers = [];
+  const nine = new Promise((done) => {
+    wrong.socket.onmessage = (event) => { answers.push(JSON.parse(event.data)); if (answers.length === 9) done(); };
+  });
+  for (let i = 0; i < 9; i++) wrong.socket.send(JSON.stringify({ t: 'join', room: typo, ...stranger, name: 'x', look: {} }));
+  await nine;
+  assert.deepEqual(answers.slice(0, 8).map((a) => a.why), Array(8).fill('no-room'));
+  assert.equal(answers[8].why, 'room-locked', 'the tenth wrong code locks');
+  assert.equal(answers[8].wait, 300);
+  const locked = await join_(running.port, opened.code, stranger);
+  assert.equal(locked.message.why, 'room-locked', 'even the right code waits');
+  locked.socket.close(); wrong.socket.close();
 
   const main = await join_(running.port, 'NUTAG', stranger);
   assert.equal(main.message.t, 'welcome', 'released builds still reach the main village');

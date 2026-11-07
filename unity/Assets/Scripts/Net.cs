@@ -251,11 +251,13 @@ public sealed class Net
                     g.Toast(Loc.L("Токен хүчингүй байна. Дахин нэвтэрнэ үү.", "Invalid ticket. Please sign in again."));
                     return;
                 }
-                if (m["why"].S == "no-room") // a mistyped code: "Connect again" goes back to the room before it
+                if (m["why"].S == "no-room" || m["why"].S == "room-locked") // a mistyped code: "Connect again" goes back to the room before it
                 {
                     if (g.V != null) { g.V.room = backRoom ?? ""; g.V.Save(); }
                     backRoom = null;
-                    GiveUp(g, Loc.L("Ийм кодтой өрөө олдсонгүй. Кодоо шалгаарай.", "No room has that code. Check it and try again."));
+                    int minutes = Mathf.Max(1, Mathf.CeilToInt(m["wait"].I / 60f));
+                    GiveUp(g, m["why"].S == "no-room" ? Loc.L("Ийм кодтой өрөө олдсонгүй. Кодоо шалгаарай.", "No room has that code. Check it and try again.")
+                        : Loc.L($"Хэт олон удаа буруу код бичлээ. {minutes} минут хүлээгээрэй.", $"Too many wrong codes. Wait {minutes} min."));
                     return;
                 }
                 if (m["why"].S == "storage")
