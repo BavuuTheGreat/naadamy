@@ -76,6 +76,7 @@ public sealed partial class Game
             Toast(Loc.L($"Тавтай морил, {p.name}!", $"Welcome, {p.name}!"));
             if (!V.tips && V.tutorialSeen > 0) Open(new TipsModal());
             Open(new ModeModal());   // singleplayer or multiplayer, on top
+            if (string.IsNullOrEmpty(p.email)) Open(new EmailLinkModal(true)); // an older save with no email: its progress is kept on the server only with one
         };
         if (string.IsNullOrEmpty(App.gameMode))     // the first launch asks the player how they want to learn (IntroCinematic.cs)
         {
@@ -85,7 +86,7 @@ public sealed partial class Game
         }
         proceed();
     }
-    public void LogOut() { Family.pin = ""; net.Close(); if (V != null) { SavePos(); V.Save(); } App.loggedIn = false; App.Save(); CloseAll(); V = null; Open(new AuthPage()); }
+    public void LogOut() { Family.pin = ""; net.SaveAlone(this); net.Close(); if (V != null) { SavePos(); V.Save(); } App.loggedIn = false; App.Save(); CloseAll(); V = null; Open(new AuthPage()); }
 
     /** Grown-ups only: the device's grown-up PIN. Before there is one, a family device asks for the family's PIN (check-pin);
      *  any other device (or one that can't reach the server) has a grown-up type a number written in words (hard for a little
@@ -396,7 +397,6 @@ public sealed partial class Game
         int step; string name = "", err = ""; const int age = 8; int avatar; readonly Live live = new Live(160, 90);
         // logging in with an email account (server/email-auth.js); acctId: a confirmed account whose steps were left unfinished
         string email = "", pass = "", pass2 = "", acctId = "", acctTicket = ""; bool busy;
-        bool asGuest; // "Play without an email": the steps make a guest
         J acct; bool adding; // acct: the login's answer, while choosing one of its 2 players · adding: the steps make the second player
         readonly SaveData guest; // a player on this device with no email: only an older save can land here, since a guest has no log out
         public AuthPage()
@@ -433,7 +433,7 @@ public sealed partial class Game
             GUILayout.BeginHorizontal();
             if (GUILayout.Button(Loc.L("Нэвтрэх", "Log in"), tab == "login" ? g.sBtn : g.sTabOff, GUILayout.MinHeight(g.U(44)))) g.Later(() => { tab = "login"; adding = false; err = ""; });
             GUILayout.Space(g.U(8));
-            if (GUILayout.Button(Loc.L("Шинээр тоглох", "New player"), tab == "register" ? g.sBtn : g.sTabOff, GUILayout.MinHeight(g.U(44)))) g.Later(() => { tab = "register"; adding = false; asGuest = false; step = 0; err = ""; });
+            if (GUILayout.Button(Loc.L("Шинээр тоглох", "New player"), tab == "register" ? g.sBtn : g.sTabOff, GUILayout.MinHeight(g.U(44)))) g.Later(() => { tab = "register"; adding = false; step = 0; err = ""; });
             GUILayout.EndHorizontal();
             g.Gap(10);
             GUILayout.BeginVertical(g.sPanel);
@@ -483,7 +483,6 @@ public sealed partial class Game
                 if (pass != pass2) { err = Loc.L("Хоёр нууц үг таарахгүй байна.", "The two passwords don't match."); return; }
                 Ask(g, ArenaApi.Body("register", "email", email.Trim(), "password", pass), r => { acctId = r["id"].S; acctTicket = r["ticket"].S; pass = pass2 = ""; step = 0; });
             });
-            if (g.Btn(Loc.L("Имэйлгүй тоглох", "Play without an email"), false, 36)) g.Later(() => { asGuest = true; step = 0; err = ""; });
         }
         void LogIn(Game g)
         {
@@ -544,7 +543,7 @@ public sealed partial class Game
         void Basar(Game g, string text) { GUILayout.BeginHorizontal(); g.IconAt(Px.BankharFace(1), 40); g.Gap(10); GUILayout.Label(text, g.sTeach); GUILayout.EndHorizontal(); g.Gap(8); }
         void Register(Game g)
         {
-            if (acctId == "" && !adding && !asGuest) { SignUp(g); return; } // the steps come after the address is confirmed
+            if (acctId == "" && !adding) { SignUp(g); return; } // an email first: every player is kept on the server
             g.Steps(step, 2);
             if (step == 0)
             {
@@ -590,7 +589,6 @@ public sealed partial class Game
                 Ask(g, body, r => Start(SaveData.Create(name, age, avatar, "", r["id"].S, r["ticket"].S), true));
                 return;
             }
-            if (acctId == "") { Start(SaveData.Create(name, age, avatar, ""), false); return; } // a guest: the id and ticket are made here, and the server learns them on the first connect
             var p = SaveData.Create(name, age, avatar, "", acctId, acctTicket);
             // kept on the server for the next device; if this is lost, the next login asks these steps again
             g.StartCoroutine(ArenaApi.Post(server, ProfileBody(p), r => { }, "/api/auth"));
@@ -606,6 +604,9 @@ public sealed partial class Game
     public sealed class EmailLinkModal : Modal
     {
         string email = "", pass = "", pass2 = "", err = ""; bool busy;
+        readonly bool must; // an older save with no email: it can't be closed until one is linked
+        public EmailLinkModal(bool must = false) { this.must = must; }
+        public override bool CanEscape => !must;
         void Ask(Game g, string body, Action<J> done)
         {
             busy = true; err = "";
@@ -616,7 +617,8 @@ public sealed partial class Game
             var box = new GUIStyle(g.sBtn) { alignment = TextAnchor.MiddleLeft };
             void Error() { if (err != "") GUILayout.Label($"<color=#e14b3d>{err}</color>", g.sLabel); }
             g.Title(Loc.L("Имэйл холбох", "Link an email"));
-            g.Small(Loc.L("Холбовол өөр төхөөрөмж дээр нэвтэрч, зоос, XP, хувцсаа авч болно.", "Link one to log in on another device and keep your coins, XP and clothes."));
+            g.Small(must ? Loc.L("Тоглоомоо хадгалахын тулд имэйл, нууц үгээ бичээрэй.", "Write an email and password to keep your game.")
+                : Loc.L("Холбовол өөр төхөөрөмж дээр нэвтэрч, зоос, XP, хувцсаа авч болно.", "Link one to log in on another device and keep your coins, XP and clothes."));
             email = g.Field(email, 254, Loc.L("Имэйл хаяг", "Email address")); g.Gap(6);
             g.Small(Loc.L("Нууц үг (8+ тэмдэгт)", "Password (8+ characters)"));
             pass = GUILayout.PasswordField(pass, '•', 64, box, GUILayout.MinHeight(g.U(38)));
