@@ -245,7 +245,7 @@ function upgrade(req, socket) {
   const accept = crypto.createHash('sha1').update(key + GUID).digest('base64');
   socket.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + accept + '\r\n\r\n');
   socket.setNoDelay(true);
-  const conn = { socket, buf: Buffer.alloc(0), frag: [], fragBytes: 0, fragOpen: false, alive: true, tokens: 30, last: Date.now(), player: null, room: null };
+  const conn = { socket, ip, buf: Buffer.alloc(0), frag: [], fragBytes: 0, fragOpen: false, alive: true, tokens: 30, last: Date.now(), player: null, room: null };
   // a client that never reads (or a very slow one) would make Node queue every reply in memory: drop it instead
   const write = (f) => { if (socket.destroyed) return; if (socket.writableLength > 256 * 1024) return socket.destroy(); socket.write(f); };
   conn.send = (obj) => { const f = frame(1, JSON.stringify(obj)); if (f) write(f); };
@@ -1051,11 +1051,13 @@ function onMessage(conn, text) {
         setTimeout(() => conn.socket.destroy(), 50);
         return;
       }
-      if (roomCodes.isPrivate(code) && !(await roomCodes.exists(code))) {
-        conn.missedRooms = (conn.missedRooms || 0) + 1; // guessing codes on one socket ends quickly
-        conn.send({ t: 'error', why: 'no-room' });
-        if (conn.missedRooms >= 5) setTimeout(() => conn.socket.destroy(), 50);
-        return;
+      if (roomCodes.isPrivate(code)) {
+        const locked = roomCodes.lockedFor(conn.ip);
+        if (locked) return conn.send({ t: 'error', why: 'room-locked', wait: locked });
+        if (!(await roomCodes.exists(code))) {
+          const wait = roomCodes.wrongCode(conn.ip);
+          return conn.send(wait ? { t: 'error', why: 'room-locked', wait } : { t: 'error', why: 'no-room' });
+        }
       }
       return joinPlayer(conn, m, code, id, t);
     }).catch((error) => {
