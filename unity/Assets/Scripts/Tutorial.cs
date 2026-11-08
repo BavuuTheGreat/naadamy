@@ -133,7 +133,6 @@ public sealed partial class Game
 
     // ================================================================ the lesson
     int tutRun; Coroutine tutCo;
-    public bool TutorialActive => tutRun != 0;
     public void StartTutorial(bool replay)
     {
         if (V == null || tutRun != 0 || race != null || battle != null) return;

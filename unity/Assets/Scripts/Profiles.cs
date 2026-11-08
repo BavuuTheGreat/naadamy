@@ -392,7 +392,7 @@ public sealed partial class Game
     // ================================================================ log in or register
     public sealed class AuthPage : Page
     {
-        string tab; bool shake;
+        string tab;
         // registering
         int step; string name = "", err = ""; const int age = 8; int avatar; readonly Live live = new Live(160, 90);
         // logging in with an email account (server/email-auth.js); acctId: a confirmed account whose steps were left unfinished

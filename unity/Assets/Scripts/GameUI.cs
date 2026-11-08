@@ -225,14 +225,6 @@ public sealed partial class Game
     Rect UR(float x, float y, float w, float h) => new Rect(U(x), U(y), U(w), U(h));
     void Ui(Rect r) { if (Event.current.type == EventType.Repaint) uiNext.Add(r); }
     bool Button(Rect r, string text, GUIStyle st = null) { Ui(r); return GUI.Button(r, text, st ?? sBtn); }
-    bool IconButton(Rect r, PxCanvas icon, string text = null, GUIStyle st = null)
-    {
-        bool hit = Button(r, "", st);
-        float s = Mathf.Min(r.height - U(10), U(28));
-        if (text == null) GUI.DrawTexture(new Rect(r.center.x - s / 2, r.center.y - s / 2, s, s), Tex(icon), ScaleMode.ScaleToFit);
-        else { GUI.DrawTexture(new Rect(r.x + U(6), r.center.y - s / 2, s, s), Tex(icon), ScaleMode.ScaleToFit); GUI.Label(new Rect(r.x + U(8) + s, r.y, r.width - s - U(10), r.height), text, new GUIStyle((st ?? sBtn)) { normal = { background = null }, active = { background = null }, hover = { background = null }, alignment = TextAnchor.MiddleLeft, padding = new RectOffset() }); }
-        return hit;
-    }
     public void Bar(Rect r, float f, Color fill)
     {
         var old = GUI.color; GUI.color = Px.Col("#2b1e2e"); GUI.DrawTexture(r, white);
