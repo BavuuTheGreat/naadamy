@@ -378,8 +378,6 @@ public sealed class Net
     public void StyleGer(string roof, string door, List<string> furn) => Send("{" + Obj("t", "ger-style", "roof", roof, "door", door) + "," + Raw("furn", "[" + string.Join(",", (furn ?? new List<string>()).Select(Q)) + "]") + "}");
     public void Wr(string t, string key, string val) => Send("{" + Obj("t", t, key, val) + "}");
     public void WrMove(string move, float p) => Send("{" + Obj("t", "wr-move", "m", move) + "," + Raw("p", F2(p)) + "}");
-    public void WalletOp(string op, string action, int coins, int xp) => Send("{" + Obj("t", "wallet-op", "op", op, "action", action) + "," + Raw("coins", coins.ToString()) + "," + Raw("xp", xp.ToString()) + "}");
-    public void ShopBuy(string op, string item) => Send("{" + Obj("t", "shop-buy", "op", op, "item", item) + "}");
 
     // ---------------------------------------------------------------- uploading progress (like village.js's net.sync)
     // Rewards and spending happen on the device. What it has on top of the server wallet it last saw is uploaded; the server adds

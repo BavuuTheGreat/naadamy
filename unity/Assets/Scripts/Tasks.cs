@@ -34,7 +34,6 @@ public sealed partial class Game
     const int SW = 160, SH = 120;
     public int Players => p2 != null ? 2 : 1;
     TaskModal task;
-    public bool TaskActive => task != null;
     /** Run one hands-on task; done gets { done, mistakes, together, pick }. */
     public void RunTask(TaskSpec spec, Action<TaskResult> done)
     {

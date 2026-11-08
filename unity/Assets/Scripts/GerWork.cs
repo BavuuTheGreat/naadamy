@@ -84,7 +84,6 @@ public sealed partial class Game
     bool young => V.age < 9;
 
     // ---------------------------------------------------------------- the stage art: the lesson's ger, at this point of the build
-    static readonly Dictionary<int, PxCanvas> gerStageArt = new Dictionary<int, PxCanvas>();
     static PxCanvas LessonGer(int stage, float sub, float t)
     {
         var c = new PxCanvas(Scenes.W, Scenes.H); Scenes.Ger(c, new SceneState { stage = stage, sub = sub }, t); return c;

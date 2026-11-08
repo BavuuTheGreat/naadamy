@@ -21,7 +21,6 @@ public sealed partial class Game
         return true;
     }
 
-    public void OpenGameModePicker() => Open(new GameModeModal());
     public void OpenIntroCinematic(Action after = null) => Open(new IntroCinematicModal(after));
 
     sealed class IntroCinematicModal : Modal
