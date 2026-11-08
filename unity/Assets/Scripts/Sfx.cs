@@ -38,7 +38,7 @@ public static class Sfx
         });
     }
     public static bool On = true;
-    static void Play(AudioClip c, float vol = 1, float pitch = 1) { if (src == null || c == null || !On) return; src.pitch = pitch; src.PlayOneShot(c, vol); }
+    static void Play(AudioClip c, float vol = 1, float pitch = 1) { if (src == null || c == null || !On || Music.Muted) return; src.pitch = pitch; src.PlayOneShot(c, vol); }
 
     public static void Tap() => Play(tap);
     static readonly System.Collections.Generic.Dictionary<string, AudioClip> blips = new System.Collections.Generic.Dictionary<string, AudioClip>();

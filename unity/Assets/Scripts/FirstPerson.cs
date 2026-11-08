@@ -375,7 +375,8 @@ public sealed partial class Game
         }
 
         // ---------------------------------------------------------------- moving: Minecraft's walk and sprint, gravity, auto-jump, swimming
-        bool SolidAt(int x, int y, int z) { byte b = world.Get(x, y, z); return b != 0 && Voxels.BLOCKS[b].solid; }
+        // past the world's sides is a wall: the edge hills go up in one-block steps that auto-jump climbs, and beyond them is nothing to stand on
+        bool SolidAt(int x, int y, int z) { if (x < 0 || z < 0 || x >= world.X || z >= world.Z) return true; byte b = world.Get(x, y, z); return b != 0 && Voxels.BLOCKS[b].solid; }
         bool WaterAt(float x, float y, float z) { byte b = world.Get(Mathf.FloorToInt(x), Mathf.FloorToInt(y), Mathf.FloorToInt(z)); return b != 0 && Voxels.BLOCKS[b].water; }
         bool Hits(float x, float y, float z)
         {

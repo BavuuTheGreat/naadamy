@@ -390,7 +390,7 @@ public sealed partial class Game
             if (stage == null && (line != null || titleT0 > 0 || layers != null))
             {
                 skipR = new Rect(ox + (vw - 128) * U, oy + U * 8, U * 120, U * 36);
-                GUI.Box(g.URect(vw - 128, 8, 120, 36), Loc.L("Алгасах »", "Skip »"), g.sBtn);
+                { var sr = g.URect(vw - 128, 8, 120, 36); string st = Loc.L("Алгасах »", "Skip »"); GUI.Box(sr, st, g.Fit(g.sBtn, st, sr.width)); }
             }
             GUI.EndGroup();
             if (fade > 0.001f) g.Box(new Rect(0, 0, Screen.width, Screen.height), new Color(fadeCol.r, fadeCol.g, fadeCol.b, fade));

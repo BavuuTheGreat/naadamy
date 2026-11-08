@@ -221,7 +221,7 @@ public sealed partial class Game
             Rect B(float x, float y, float w, float h) { var r = g.URect(x, y, w, h); return r; }
             var ru = B(12, vh - 160, 60, 56); var rd = B(12, vh - 96, 60, 56); var rc = B(vw - 104, vh - 104, 92, 92); var rj = B(vw - 200, vh - 70, 88, 58);
             GUI.Box(ru, "▲", Held(upR) ? g.sPrimary : g.sBtn); GUI.Box(rd, "▼", Held(downR) ? g.sPrimary : g.sBtn);
-            GUI.Box(rc, "<b>Чү!</b>", sprint ? g.sPrimary : g.sBtn); GUI.Box(rj, Loc.L("Үсрэх", "Jump"), g.sBtn);
+            GUI.Box(rc, "<b>Чү!</b>", g.Fit(sprint ? g.sPrimary : g.sBtn, "<b>Чү!</b>", rc.width)); GUI.Box(rj, Loc.L("Үсрэх", "Jump"), g.Fit(g.sBtn, Loc.L("Үсрэх", "Jump"), rj.width));
             upR = Shift(ru, ox, oy); downR = Shift(rd, ox, oy); chuR = Shift(rc, ox, oy); jumpR = Shift(rj, ox, oy);
             GUI.EndGroup();
         }

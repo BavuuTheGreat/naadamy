@@ -16,8 +16,10 @@ public sealed partial class Game
         public override void Draw(Game g)
         {
             var V = g.V; var e = Aimags.EthnicById(V.eth); var a = Aimags.ById(V.aimag);
-            GUILayout.BeginHorizontal(g.sBtn); g.IconAt(Px.Mascot(V.avatar), 44);
-            GUILayout.BeginVertical(); GUILayout.Label("<b>" + V.name + "</b>", g.sTitle);
+            GUILayout.BeginHorizontal(g.sBtn); g.IconAt(Px.Mascot(V.avatar), 44); GUILayout.Space(g.U(10));
+            // a long name (up to 20 letters) shrinks to the room beside the mascot instead of running over it
+            string title = "<b>" + V.name + "</b>"; float room = g.ModalWidth - g.U(44 + 90);
+            GUILayout.BeginVertical(); GUILayout.Label(title, room > 0 ? g.Fit(new GUIStyle(g.sTitle) { wordWrap = false }, title, room) : g.sTitle);
             g.Small((e != null ? "" + e.name : "" + Profiles.MASCOTS[V.avatar].name) + (a != null ? " · " + a.name : ""));
             GUILayout.EndVertical(); GUILayout.EndHorizontal();
             void Item(string emoji, string label, Action run) // the whole row is the button, not only the arrow at its end
@@ -58,6 +60,9 @@ public sealed partial class Game
             GUILayout.BeginHorizontal(); g.Text(Loc.L("Хэл", "Language")); GUILayout.FlexibleSpace();
             if (GUILayout.Button(Loc.En ? "English → Монгол" : "Монгол → English", g.sBtn, GUILayout.MinHeight(g.U(36)))) { Loc.En = !Loc.En; g.App.en = Loc.En; g.App.Save(); }
             GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal(); g.Text(Loc.L("Бүх дуу", "All audio")); GUILayout.FlexibleSpace();
+            if (GUILayout.Button(!Music.Muted ? Loc.L("Асаалттай", "On") : Loc.L("Унтраалттай", "Off"), !Music.Muted ? g.sPrimary : g.sBtn, GUILayout.MinHeight(g.U(36)))) g.Later(Music.ToggleMute);
+            GUILayout.EndHorizontal();
             GUILayout.BeginHorizontal(); g.Text(Loc.L("Дуу", "Sound")); GUILayout.FlexibleSpace();
             if (GUILayout.Button(g.App.sound ? Loc.L("Асаалттай", "On") : Loc.L("Унтраалттай", "Off"), g.App.sound ? g.sPrimary : g.sBtn, GUILayout.MinHeight(g.U(36)))) { g.App.sound = !g.App.sound; Sfx.On = g.App.sound; g.App.Save(); }
             GUILayout.EndHorizontal();
@@ -77,7 +82,7 @@ public sealed partial class Game
             g.Small(Loc.L("Компьютер дээр “node server/server.js” ажиллуулж, түүний хаягийг энд бичвэл Басар AI ухаантай болно (ж: 192.168.1.10:8000). Хоосон бол офлайн мэдлэгээр ажиллана.", "Run “node server/server.js” on a computer and write its address here to give Basar AI smarts (e.g. 192.168.1.10:8000). Empty: offline knowledge."));
             GUILayout.BeginHorizontal();
             server = GUILayout.TextField(server, 80, new GUIStyle(g.sBtn) { alignment = TextAnchor.MiddleLeft }, GUILayout.MinHeight(g.U(38)));
-            if (GUILayout.Button(Loc.L("Хадгалах", "Save"), g.sPrimary, GUILayout.Width(g.U(100)), GUILayout.MinHeight(g.U(38)))) g.Later(() => { if (server.Trim() != "" && !Family.IsAddress(server)) { g.Toast(Loc.L("Энэ нь серверийн хаяг биш байна (ж: 192.168.1.10:8000). Гэр бүлийн эсвэл өрөөний кодыг энд бичихгүй.", "That isn't a server address (e.g. 192.168.1.10:8000). Family and room codes don't go here.")); return; } g.V.server = server.Trim(); g.V.Save(); g.App.server = g.V.server; g.App.Save(); /* an empty box means the hosted server: forget this device's last address too, or it would still be used */ Basar.Recheck(); if (g.Multi) g.net.Connect(g); g.StartCoroutine(Basar.Check(g)); g.Toast(Loc.L("Хадгаллаа", "Saved")); });
+            if (GUILayout.Button(Loc.L("Хадгалах", "Save"), g.Fit(g.sPrimary, Loc.L("Хадгалах", "Save"), g.U(100)), GUILayout.Width(g.U(100)), GUILayout.MinHeight(g.U(38)))) g.Later(() => { if (server.Trim() != "" && !Family.IsAddress(server)) { g.Toast(Loc.L("Энэ нь серверийн хаяг биш байна (ж: 192.168.1.10:8000). Гэр бүлийн эсвэл өрөөний кодыг энд бичихгүй.", "That isn't a server address (e.g. 192.168.1.10:8000). Family and room codes don't go here.")); return; } g.V.server = server.Trim(); g.V.Save(); g.App.server = g.V.server; g.App.Save(); /* an empty box means the hosted server: forget this device's last address too, or it would still be used */ Basar.Recheck(); if (g.Multi) g.net.Connect(g); g.StartCoroutine(Basar.Check(g)); g.Toast(Loc.L("Хадгаллаа", "Saved")); });
             GUILayout.EndHorizontal();
             // the address actually used: an empty box can still fall back to the one this device last used, so say which
             string inUse = Family.ServerOf(g, g.V);
@@ -185,8 +190,9 @@ public sealed partial class Game
                 g.Small(Loc.L("Өөр төхөөрөмж дээр код үүсгэсэн бол:", "Made a code on another device already?"));
                 GUILayout.BeginHorizontal();
                 joinCode = GUILayout.TextField(joinCode, 9, new GUIStyle(g.sBtn) { alignment = TextAnchor.MiddleLeft }, GUILayout.MinHeight(g.U(38)));
-                if (GUILayout.Button(Loc.L("Нэгдэх", "Join"), g.sPrimary, GUILayout.Width(g.U(100)), GUILayout.MinHeight(g.U(38))) && !busy) g.Later(() =>
+                if (GUILayout.Button(Loc.L("Нэгдэх", "Join"), g.Fit(g.sPrimary, Loc.L("Нэгдэх", "Join"), g.U(100)), GUILayout.Width(g.U(100)), GUILayout.MinHeight(g.U(38))) && !busy) g.Later(() =>
                 {
+                    if (busy) return; // a double click: join once
                     string code = Family.Clean(joinCode); mailErr = false;
                     if (code.Length != 8) { famErr = Loc.L("8 үсэг, тоотой кодоо бичээрэй", "Write the 8-letter code"); return; }
                     busy = true; famErr = "";
@@ -370,7 +376,7 @@ public sealed partial class Game
             AskPin(g, Loc.L("Гэр бүлийн ПИН кодоо оруулаарай:", "Enter the family PIN:"));
         }
         void AskPin(Game g, string text) => g.Open(new PinModal(Loc.L("Том хүний ПИН код", "Grown-up PIN"), text, pin => { Family.pin = typedPin = pin; pinAct?.Invoke(pin); }));
-        void Run(Game g, System.Collections.IEnumerator request, bool email = false) { busy = true; famErr = ""; mailErr = email; g.StartCoroutine(request); }
+        void Run(Game g, System.Collections.IEnumerator request, bool email = false) { if (busy) return; busy = true; famErr = ""; mailErr = email; g.StartCoroutine(request); }
         /** A family request answered: a toast, or why not; a new recovery code is shown once. A refused PIN (this device's may be
          *  out of date: changed on another device) is asked again; with `keepPin`, a re-typed one that worked becomes this
          *  device's PIN. */
@@ -409,7 +415,7 @@ public sealed partial class Game
             public override void Press(Game g) { }
             public override void Draw(Game g)
             {
-                GUILayout.BeginHorizontal(); g.IconAt(Px.Mascot(avatar), 36); GUILayout.Label($"<b>{name}</b>", g.sTitle); GUILayout.EndHorizontal();
+                GUILayout.BeginHorizontal(); g.IconAt(Px.Mascot(avatar), 36); GUILayout.Space(g.U(8)); GUILayout.Label($"<b>{name}</b>", g.sTitle); GUILayout.EndHorizontal();
                 g.Small(Loc.L("3 нууц зураг сонгоорой. Дараалал нь чухал.", "Choose 3 secret pictures. The order matters."));
                 g.PicPad(sel, code => { g.Close(); picked(code); });
                 if (g.Btn(Loc.L("Болих", "Cancel"))) g.Later(g.Close);
@@ -624,7 +630,7 @@ public sealed partial class Game
             foreach (var m in list)
             {
                 GUILayout.BeginVertical(g.sPanel);
-                GUILayout.BeginHorizontal(); g.IconAt(Px.Face(m.whoFace), 36); GUILayout.BeginVertical(); GUILayout.Label("<b>" + m.who + "</b>", g.sLabel); g.Small(DateTimeOffset.FromUnixTimeMilliseconds(m.ts).LocalDateTime.ToString("yyyy.MM.dd")); GUILayout.EndVertical(); GUILayout.EndHorizontal();
+                GUILayout.BeginHorizontal(); g.IconAt(Px.Face(m.whoFace), 36); GUILayout.Space(g.U(8)); GUILayout.BeginVertical(); GUILayout.Label("<b>" + m.who + "</b>", g.sLabel); g.Small(DateTimeOffset.FromUnixTimeMilliseconds(m.ts).LocalDateTime.ToString("yyyy.MM.dd")); GUILayout.EndVertical(); GUILayout.EndHorizontal();
                 GUILayout.Label("<i>“" + m.prompt + "”</i>", g.sLabel);
                 if (!string.IsNullOrEmpty(m.text)) g.Text(m.text);
                 string mark = VoiceSync.Mark(g, m); if (mark != null) g.Small(mark);
@@ -644,6 +650,7 @@ public sealed partial class Game
             if (playing == m.id) { player.Stop(); playing = null; return; }
             string path = Path.Combine(MemDir, m.audio);
             if (!File.Exists(path)) { if (!VoiceSync.state.ContainsKey(m.id)) g.StartCoroutine(VoiceSync.Download(g, m, ok => g.Later(() => { if (ok) Play(g, m); else g.Toast(Loc.L("Бичлэгийг татаж чадсангүй.", "Could not download the recording.")); }))); return; }
+            if (Music.Muted) { g.Toast(Loc.L("Бүх дуу унтраалттай байна.", "All audio is off.")); return; }
             var clip = Wav.Load(path); if (clip == null) return;
             player.clip = clip; player.Play(); playing = m.id;
         }
@@ -660,7 +667,7 @@ public sealed partial class Game
             var prompts = Prompts; var fam = g.App.family;
             g.Title(Loc.L("Шинэ дурсамж", "New memory"));
             GUILayout.Label(Loc.L("Асуулт", "Question"), g.sSmall);
-            GUILayout.BeginHorizontal(g.sBtn); GUILayout.Label("<b>" + prompts[pi % prompts.Count] + "</b>", g.sLabel); if (GUILayout.Button(Loc.L("Өөр", "Other"), g.sBtn, GUILayout.Width(g.U(70)))) g.Later(() => pi++); GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal(g.sBtn); GUILayout.Label("<b>" + prompts[pi % prompts.Count] + "</b>", g.sLabel); if (GUILayout.Button(Loc.L("Өөр", "Other"), g.Fit(g.sBtn, Loc.L("Өөр", "Other"), g.U(70)), GUILayout.Width(g.U(70)))) g.Later(() => pi++); GUILayout.EndHorizontal();
             GUILayout.Label(Loc.L("Хэн ярьж байна?", "Who is telling?"), g.sSmall);
             int hit = g.Chips(fam.Select(f => f.Name.ToString()).ToList(), who, 70); if (hit >= 0) who = hit;
 #if UNITY_WEBGL && !UNITY_EDITOR

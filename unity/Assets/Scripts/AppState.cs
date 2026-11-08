@@ -15,6 +15,7 @@ public sealed class AppState
     const string KEY = "naadamy.app.v1";
     public bool en, loggedIn, sound = true, bigText, music = true, flatView, voice = true; // voice: the story chapters' spoken lines (Voice.cs) // flatView: the old top-down village instead of the isometric one (Iso.cs); false in older saves too
     public float musicVolume = 0.35f;
+    public bool muted; // the 🔊 button: every sound off at once (Music.Mute); false in older saves
     public string activeId = "";
     public string server = "", familyCode = "";   // the server this device last used, and its family code (Family.cs)
     public string emailTo = "", emailFam = "";     // the weekly email's masked address ("k***@gmail.com") and the family it is for (Family.Email)
@@ -39,7 +40,7 @@ public sealed class AppState
 
     public static AppState Load()
     {
-        try { string raw = PlayerPrefs.GetString(KEY, ""); if (raw != "") { var s = JsonUtility.FromJson<AppState>(raw); if (s != null) { s.server ??= ""; s.familyCode ??= ""; s.pinHash ??= ""; s.pinSalt ??= ""; s.recHash ??= ""; s.recSalt ??= ""; s.emailTo ??= ""; s.emailFam ??= ""; return s; } } }
+        try { string raw = PlayerPrefs.GetString(KEY, ""); if (raw != "") { var s = JsonUtility.FromJson<AppState>(raw); if (s != null) { s.server ??= ""; s.familyCode ??= ""; s.pinHash ??= ""; s.pinSalt ??= ""; s.recHash ??= ""; s.recSalt ??= ""; s.emailTo ??= ""; s.emailFam ??= ""; if (s.profiles != null) s.profiles = System.Linq.Enumerable.ToList(System.Linq.Enumerable.Distinct(s.profiles)); /* a double click once added a player twice */ return s; } } }
         catch (Exception e) { Debug.LogWarning("Naadamy: could not read the app state. " + e.Message); }
         return new AppState();
     }

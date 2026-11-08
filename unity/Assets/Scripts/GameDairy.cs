@@ -9,7 +9,7 @@ public sealed partial class Game
     {
         const int NEED = 5; const float ZA = 0.36f, ZB = 0.64f;
         readonly string id, kind; readonly Rules.Animal A; readonly Live live = new Live(180, 110);
-        string phase = "young", msg; int good; float pos, dirn = 1, nuzzle = -9; bool done, first;
+        string phase = "young", msg; int good; float pos, dirn = 1, nuzzle = -9, doneT; bool done, first;
         public override (string who, string face)? Speaker => ("farmer", done ? "laugh" : "happy");
         public MilkModal(string id, string kind) { this.id = id; this.kind = kind; A = Rules.DAIRY_ANIMALS[kind]; SetMsg(); }
         void SetMsg() => msg = phase == "young"
@@ -22,15 +22,15 @@ public sealed partial class Game
         }
         public override void Press(Game g)
         {
-            if (done) { g.Close(); return; }
+            if (done) { if (Time.time - doneT > 0.8f) g.Close(); return; } // a press still held from milking doesn't skip the result
             if (phase == "young") { if (nuzzle < 0) { nuzzle = Time.time; Sfx.Pop(); } return; }
             if (pos >= ZA && pos <= ZB) { good++; Sfx.Pour(0.3f + good * 0.1f); msg = Loc.L("Сайн байна!", "Nice!") + " " + new string('●', good); }
-            else { Sfx.Tap(); msg = Loc.L("Арай эрт/хожуу. Тайван, хэмнэлтэй саа.", "A bit early or late. Calm and steady."); }
+            else { good = Mathf.Max(0, good - 1); Sfx.Tap(); msg = Loc.L("Арай эрт/хожуу. Тайван, хэмнэлтэй саа.", "A bit early or late. Calm and steady."); } // a miss takes one back: mashing the button doesn't fill the pail
             if (good >= NEED) Finish(g);
         }
         void Finish(Game g)
         {
-            done = true; var V = g.V; V.SetMilked(id, SaveData.NowMs()); V.Stock(A.gives, A.n); g.Quest("milk"); g.Reward(2, 6);
+            done = true; doneT = Time.time; var V = g.V; V.SetMilked(id, SaveData.NowMs()); V.Stock(A.gives, A.n); g.Quest("milk"); g.Reward(2, 6);
             first = V.FirstTime("milk_" + kind); V.Save(); Sfx.Good();
         }
         public override void Draw(Game g)
@@ -47,8 +47,10 @@ public sealed partial class Game
             Px.R(x, 0, 0, 180, 110, "#b89462"); Px.R(x, 0, 0, 180, 34, "#9fd8f7"); Px.R(x, 0, 34, 180, 8, "#76b947");
             var mom = Px.Beast(kind, 0); float sc = kind == "goat" ? 3 : 2.6f;
             x.BlitScaled(mom, 34, 76 - mom.H * sc, mom.W * sc, mom.H * sc);
-            var young = Px.Beast(kind == "mare" ? "foal" : kind == "goat" ? "lamb" : "botgo", 0); bool suck = phase == "young" && nuzzle > 0 && t - nuzzle < 1.4f;
-            if (phase == "young" || suck) x.BlitScaled(young, suck ? 70 : 128, 76 - young.H * 2, young.W * 2, young.H * 2);
+            // the young one: a foal for the mare; the calf and the kid are their mother, small (the game has no calf or kid sprite)
+            var young = kind == "mare" ? Px.Beast("foal", 0) : mom; float ys = kind == "mare" ? 2 : sc * 0.5f;
+            bool suck = phase == "young" && nuzzle > 0 && t - nuzzle < 1.4f;
+            if (phase == "young" || suck) x.BlitScaled(young, suck ? 70 : 128, 76 - young.H * ys, young.W * ys, young.H * ys);
             Px.R(x, 96, 62, 22, 16, "#2b1e2e"); Px.R(x, 98, 63, 18, 14, "#a5a5b0");
             int fill = Js.Round(good / (float)NEED * 13); Px.R(x, 98, 77 - fill, 18, fill, "#ffffff"); // the pail filling up
             if (phase == "milk")
@@ -68,11 +70,11 @@ public sealed partial class Game
     // ---------------------------------------------------------------- dairy stations: pick a recipe you have the milk for, then do the real steps
     sealed class StationModal : Modal
     {
-        readonly string st; Rules.Recipe r; int step, taps; bool done, first;
+        readonly string st; Rules.Recipe r; int step, taps; float doneT; bool done, first;
         public StationModal(string st) { this.st = st; }
         string Name() => st == "rack" ? Loc.L("Ааруулын тавиур", "Aaruul drying rack") : st == "tulga" ? Loc.L("Тулга: сүү буцалгах", "Outdoor stove: boil milk") : Loc.L("Хөхүүр: айраг бүлэх", "Khukhuur: churn airag");
         bool Has(Game g, Rules.Recipe q) { foreach (var kv in q.need) if (g.V.Have(kv.Key) < kv.Value) return false; return true; }
-        public override void Press(Game g) { if (done) g.Close(); else if (r != null) Next(g); }
+        public override void Press(Game g) { if (done) { if (Time.time - doneT > 0.8f) g.Close(); } else if (r != null) Next(g); } // churning taps don't skip the result
         void Next(Game g)
         {
             bool mashing = r.mash && step == 1;
@@ -81,7 +83,7 @@ public sealed partial class Game
             if (step < r.steps.Length) return;
             foreach (var kv in r.need) g.V.Stock(kv.Key, -kv.Value);
             g.V.Stock(r.id, r.gives); g.Quest("dairy"); g.Reward(3, 10);
-            first = g.V.FirstTime("made_" + r.id); g.V.Save(); Sfx.Good(); if (first) g.Confetti(40); done = true;
+            first = g.V.FirstTime("made_" + r.id); g.V.Save(); Sfx.Good(); if (first) g.Confetti(40); done = true; doneT = Time.time;
         }
         public override void Draw(Game g)
         {

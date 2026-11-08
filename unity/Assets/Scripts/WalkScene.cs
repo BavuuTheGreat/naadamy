@@ -92,11 +92,14 @@ public sealed partial class Game
             drawTop?.Invoke(b, t);
             // scale it onto the screen: the whole room if it fits, otherwise follow you
             g.Box(new Rect(0, 0, Screen.width, Screen.height), Px.Col(bg));
-            k = Mathf.Min(Screen.width / (float)W, Screen.height / (float)H);
+            // HEAD: a person is drawn up to this far above their feet, so the view keeps that much room above the top row
+            // (standing at the top edge, the head was cut off by the top of the screen)
+            const float HEAD = 22;
+            k = Mathf.Min(Screen.width / (float)W, Screen.height / (H + HEAD));
             if (Screen.width < Screen.height) k = Mathf.Max(k, Screen.height / (H * 1.6f));
             float vw = Screen.width / k, vh = Screen.height / k;
             camX = vw >= W ? (W - vw) / 2 : Mathf.Clamp(mx - vw / 2, 0, W - vw);
-            camY = vh >= H ? (H - vh) / 2 : Mathf.Clamp(my - vh * 0.45f, 0, H - vh);
+            camY = vh >= H + HEAD ? (H - HEAD - vh) / 2 : Mathf.Clamp(my - vh * 0.45f, -HEAD, H - vh);
             live.ShowAt(new Rect(-camX * k, -camY * k, W * k, H * k));
             // top: leave and the title; bottom: info, buttons and the action
             var safe = Screen.safeArea; float sx = safe.x, sy = Screen.height - safe.yMax, sw2 = safe.width / g.UiScale, sh = safe.height / g.UiScale;

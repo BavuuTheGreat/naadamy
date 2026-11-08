@@ -234,7 +234,7 @@ public sealed partial class Game
     /** The local guide's question for the province's stamp. */
     sealed class StampQuizModal : Modal
     {
-        readonly string id; readonly Action done; readonly List<(Tx o, bool ok)> opts; readonly HashSet<int> wrong = new HashSet<int>();
+        readonly string id; readonly Action done; readonly List<(Tx o, bool ok)> opts; readonly HashSet<int> wrong = new HashSet<int>(); bool answered;
         public StampQuizModal(string id, Action done) { this.id = id; this.done = done; var j = Aimags.J(id); opts = j.o.Select((o, i) => (o, i == j.a)).OrderBy(_ => UnityEngine.Random.value).ToList(); }
         public override void Draw(Game g)
         {
@@ -244,7 +244,7 @@ public sealed partial class Game
             for (int i = 0; i < opts.Count; i++)
             {
                 bool was = GUI.enabled; GUI.enabled = !wrong.Contains(i);
-                if (g.Btn(opts[i].o.ToString(), false, 40)) { int k = i; g.Later(() => { if (!opts[k].ok) { wrong.Add(k); Sfx.Bad(); return; } g.Stamp(id); g.Confetti(60); g.Close(); done(); }); }
+                if (g.Btn(opts[i].o.ToString(), false, 40)) { int k = i; g.Later(() => { if (answered) return; /* a double click: the second Close would shut the trip map too */ if (!opts[k].ok) { wrong.Add(k); Sfx.Bad(); return; } answered = true; g.Stamp(id); g.Confetti(60); g.Close(); done(); }); }
                 GUI.enabled = was;
             }
         }

@@ -87,6 +87,7 @@ public sealed partial class Game
         public virtual (string who, string face)? Speaker => null;
     }
     Modal modal; Rect modalPanel; // where the open window is on the screen, for its ✕ and for taps outside it
+    public float ModalWidth => modalPanel.width; // 0 on the window's first frame
     readonly Stack<Modal> under = new Stack<Modal>();
     /** A full-screen scene is showing (maybe under a window opened from it), so the village is hidden. */
     bool InScene { get { if (modal == null) return false; if (modal.FullScreen) return true; foreach (var m in under) if (m.FullScreen) return true; return false; } }
@@ -224,7 +225,27 @@ public sealed partial class Game
     }
     Rect UR(float x, float y, float w, float h) => new Rect(U(x), U(y), U(w), U(h));
     void Ui(Rect r) { if (Event.current.type == EventType.Repaint) uiNext.Add(r); }
-    bool Button(Rect r, string text, GUIStyle st = null) { Ui(r); return GUI.Button(r, text, st ?? sBtn); }
+    bool Button(Rect r, string text, GUIStyle st = null) { Ui(r); st ??= sBtn; return GUI.Button(r, text, Fit(st, text, r.width)); }
+    readonly Dictionary<(Font, int, int, string, int), int> fitCache = new Dictionary<(Font, int, int, string, int), int>();
+    /** The style for a text in a box w wide that never breaks a word in two ("Алгаса / х"): when the longest word
+     *  doesn't fit on one line, the font shrinks (to 55% at most) until it does. The same style when it already fits. */
+    public GUIStyle Fit(GUIStyle st, string text, float w)
+    {
+        if (string.IsNullOrEmpty(text) || st == null || st.fontSize <= 0) return st;
+        var key = (st.font, st.fontSize, st.padding.horizontal, text, Mathf.RoundToInt(w)); // by value: callers often pass a new style each frame
+        if (!fitCache.TryGetValue(key, out int size))
+        {
+            if (fitCache.Count > 1024) fitCache.Clear(); // the texts change with the language and the screen size
+            float room = w - st.padding.horizontal;
+            var one = new GUIStyle(st) { wordWrap = false, padding = new RectOffset() };
+            var words = text.Split(new[] { ' ', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            float Widest(int fs) { one.fontSize = fs; return words.Length == 0 ? 0 : words.Max(x => one.CalcSize(new GUIContent(x)).x); }
+            size = st.fontSize; int min = Mathf.Max(8, Mathf.RoundToInt(st.fontSize * 0.55f));
+            while (size > min && Widest(size) > room) size--;
+            fitCache[key] = size;
+        }
+        return size == st.fontSize ? st : new GUIStyle(st) { fontSize = size };
+    }
     public void Bar(Rect r, float f, Color fill)
     {
         var old = GUI.color; GUI.color = Px.Col("#2b1e2e"); GUI.DrawTexture(r, white);
@@ -509,8 +530,23 @@ public sealed partial class Game
         }
         return "ui:star";
     }
+    /** The 🔊 button: every sound on or off. Faded with a red stroke across while muted. */
+    public bool MuteButton(Rect r)
+    {
+        bool m = Music.Muted; var was = GUI.color; if (m) GUI.color = new Color(1, 1, 1, 0.5f);
+        bool hit = Round(r, Emo.Icon("🔊"), null, m ? sBtn : sChip);
+        GUI.color = was;
+        if (m)
+        {
+            var piv = r.center; var mx = GUI.matrix; GUIUtility.RotateAroundPivot(-45, piv);
+            GUI.DrawTexture(new Rect(piv.x - r.width * 0.36f, piv.y - U(1.5f), r.width * 0.72f, U(3)), Texture2D.whiteTexture, ScaleMode.StretchToFill, false, 0, Px.Col("#e14b3d"), 0, 0);
+            GUI.matrix = mx;
+        }
+        if (hit) Later(Music.ToggleMute);
+        return hit;
+    }
     /** A round parchment button (.v-round) with an icon or a short text. */
-    bool Round(Rect r, PxCanvas icon, string text = null, GUIStyle st = null)
+    public bool Round(Rect r, PxCanvas icon, string text = null, GUIStyle st = null)
     {
         bool hit = Button(r, "", st ?? sChip);
         if (icon != null) { float s = r.width * 0.62f; GUI.DrawTexture(new Rect(r.center.x - s / 2, r.center.y - s / 2 - U(2), s, s), Tex(icon), ScaleMode.ScaleToFit); }
@@ -590,7 +626,7 @@ public sealed partial class Game
             if (Round(UR(tx + 58, my0, 50, 50), Px.Icon("ui:book"))) Later(() => { moreOpen = false; Open(new LearnPage()); }); GlowAt("learn", UR(tx + 58, my0, 50, 50)); my0 -= 56;
             if (Round(UR(tx + 58, my0, 50, 50), Px.Icon("ui:scroll"))) Later(() => { moreOpen = false; Open(new QuestModal()); }); GlowAt("quests", UR(tx + 58, my0, 50, 50)); my0 -= 56;
             if (Round(UR(tx + 58, my0, 50, 50), StoryFace("chinggis", "smile", 0))) Later(() => { moreOpen = false; OpenStory(); }); GlowAt("story", UR(tx + 58, my0, 50, 50)); my0 -= 56; // the story mode
-            if (Round(UR(tx + 58, my0, 50, 50), Emo.Icon("🎵"), null, Music.On ? sChip : sBtn)) Later(Music.Toggle);
+            MuteButton(UR(tx + 58, my0, 50, 50));
         }
         else { GlowAt("fp", moreR); GlowAt("learn", moreR); GlowAt("quests", moreR); GlowAt("story", moreR); }
         // bottom right: run, jump and the action button (the web version's v-bottom order)

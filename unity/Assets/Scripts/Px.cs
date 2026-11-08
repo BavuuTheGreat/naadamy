@@ -782,7 +782,7 @@ public static partial class Px
                 x = new PxCanvas(14, 12);
                 Hooves(x, f, new[] { 3, 5, 8, 10 }, 8, 4, "#c9bda6", "#6a5e52", "#b6a890"); Blob(x, 6, 5, 4, 3, "#fbf6ec", "#8a8274"); Wool(x, 6, 5, 4, 3, "#fbf6ec", 5); Blob(x, 11, 3, 2, 2, "#f2dcc8", "#8a8274"); Eye(x, 12, 2); P(x, 13, 4, "#e8a0a0"); R(x, 9, 1, 2, 1, "#e8c8b0");
                 break;
-            case "botgo": // a baby camel, standing in for the calf in the milking game
+            case "botgo": // a baby camel
                 x = new PxCanvas(16, 15);
                 Hooves(x, f, new[] { 4, 6, 10, 11 }, 9, 6, "#d9b07a", "#8a5a33", "#c99a5a"); Blob(x, 7, 7, 4, 2, "#e2c08a", K.outl); P(x, 5, 4, "#c99a5a"); P(x, 9, 4, "#c99a5a"); R(x, 11, 2, 2, 5, "#e2c08a"); Blob(x, 14, 2, 2, 1, "#e2c08a", K.outl); Eye(x, 14, 1);
                 break;
