@@ -71,7 +71,6 @@ public sealed partial class Game
     }
     public readonly ArenaInfo arena = new ArenaInfo();
 
-    static readonly string[] TIER_IDS = { "novice", "nachin", "khartsaga", "zaan", "garid", "arslan", "avarga" };
     public static string TierName(string id)
     {
         switch (id)
@@ -178,7 +177,6 @@ public sealed partial class Game
         }
     }
 
-    public void OpenArena() => Open(new ArenaHubModal());
 
     // ---------------------------------------------------------------- the arena's front door
     public sealed class ArenaHubModal : Modal

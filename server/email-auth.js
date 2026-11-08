@@ -1,33 +1,26 @@
 'use strict';
-/* Email accounts: POST /api/auth. `signup` takes an address and a password and mails a 6-digit code; `verify` with that code
-   makes the account and its player (an id and this device's ticket). The game then asks for the name, mascot and secret
-   pictures, and `profile` keeps the name and mascot (with the save's default age), so `login` on any device brings the same player back. Until `profile`,
-   `ready` is false: a login then goes on with those steps. Passwords are kept only as salted scrypt hashes; a code only as a
-   hash, in memory, for 15 minutes and 5 tries; 5 wrong passwords lock the account for 15 minutes, doubling, at most a day.
-   A guest (a player made on the device, with no email) sends its `id` and `ticket` with `verify`: the account then belongs to
-   that player, so nothing is lost. An account holds at most 2 players: `add` makes the second, and `login` answers with both.
-   Mail goes through Resend as in parent-email.js; without it the codes are printed to the log, except in production, where
-   signing up is off. See docs/PROTOCOL.md, "Email accounts". */
+/* Email accounts: POST /api/auth. `register` takes an address and a password and makes the account and its player (an id
+   and this device's ticket) at once; no mail is sent, so the address is not proved. The game then asks for the name and
+   mascot, and `profile` keeps them (with the save's default age), so `login` on any device brings the same player back.
+   Until `profile`, `ready` is false: a login then goes on with those steps. An older save with no email sends its `id` and
+   `ticket` with `register`: the account then belongs to that player, so nothing is lost. An account holds at most 2 players:
+   `add` makes the second, and `login` answers with both. Passwords are kept only as salted scrypt hashes; 5 wrong passwords
+   lock the account for 15 minutes, doubling, at most a day. See docs/PROTOCOL.md, "Email accounts". */
 
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const clientIp = require('./client-ip.js');
 const { hashPassword, passwordRecord } = require('./accounts.js');
-const { resend, emailText } = require('./parent-email.js');
+const { emailText } = require('./parent-email.js');
 
 const PLAYER_ID = /^[\w-]{4,24}$/;
 const PLAYER_TICKET = /^[a-f0-9]{64}$/i;
-const CODE = /^\d{6}$/;
 const PASSWORD_MIN = 8, PASSWORD_MAX = 64;
-const CODE_MS = 15 * 60 * 1000, CODE_TRIES = 5, PENDING_MAX = 2000;
-const HOUR = 60 * 60 * 1000, DAY = 24 * HOUR;
-const SENDS_PER_HOUR = 3, SENDS_PER_DAY = 500; // mails to one address, and in all
-const TRIES = 5, LOCK_MS = 15 * 60 * 1000, LOCK_MAX = DAY;
+const TRIES = 5, LOCK_MS = 15 * 60 * 1000, LOCK_MAX = 24 * 60 * 60 * 1000;
 const PER_MINUTE = 30;
 
 const passwordOk = (p) => typeof p === 'string' && p.length >= PASSWORD_MIN && p.length <= PASSWORD_MAX;
-const codeHash = (email, code) => crypto.createHash('sha256').update(`${email}:${code}`).digest('hex');
 const sameHex = (a, b) => a.length === b.length && crypto.timingSafeEqual(Buffer.from(a, 'hex'), Buffer.from(b, 'hex'));
 
 // ---------------------------------------------------------------- where accounts are kept
@@ -127,16 +120,8 @@ function pgAccounts(pool) {
 }
 
 // ---------------------------------------------------------------- the flow
-module.exports = function createEmailAuth(roomStore, { dataDir, cloudOf = async () => null, env = process.env, now = () => Date.now(), send, perMinute = PER_MINUTE } = {}) {
-  const apiKey = env.RESEND_API_KEY || '', from = env.EMAIL_FROM || '';
-  const production = Boolean(env.RENDER || env.NODE_ENV === 'production');
-  const canMail = Boolean(send || (apiKey && from));
-  const enabled = canMail || !production;
-  const deliver = send || (canMail ? resend(apiKey, from) : async ({ to, code }) => console.log(`Email auth: no mail service, the code for ${to} is ${code}`));
+module.exports = function createEmailAuth(roomStore, { dataDir, cloudOf = async () => null, now = () => Date.now(), perMinute = PER_MINUTE } = {}) {
   const accounts = roomStore.kind === 'postgres' && roomStore.pool ? pgAccounts(roomStore.pool) : jsonAccounts(dataDir);
-  const pending = new Map(); // email -> { hash, salt, code, until, tries }
-  const sends = new Map(); // email -> times of its mails this hour
-  let sentToday = [];
   const hits = new Map();
 
   function allow(ip) {
@@ -144,60 +129,7 @@ module.exports = function createEmailAuth(roomStore, { dataDir, cloudOf = async 
     if (!h || t - h.at > 60_000) { hits.set(ip, { at: t, n: 1 }); if (hits.size > 5000) for (const [k, v] of hits) if (t - v.at > 60_000) hits.delete(k); return true; }
     return ++h.n <= perMinute;
   }
-  function sweep() {
-    const t = now();
-    for (const [email, p] of pending) if (p.until <= t) pending.delete(email);
-    for (const [email, times] of sends) { const left = times.filter((at) => t - at < HOUR); if (left.length) sends.set(email, left); else sends.delete(email); }
-    sentToday = sentToday.filter((at) => t - at < DAY);
-  }
-  function codeMail(to, code) {
-    const mn = `Naadamy-д бүртгүүлэх код: ${code}. Энэ код 15 минут хүчинтэй. Та өөрөө бүртгүүлээгүй бол энэ захидлыг үл тоомсорлоорой.`;
-    const en = `Your Naadamy sign-up code: ${code}. It works for 15 minutes. If you did not sign up, just ignore this email.`;
-    return { to, code, subject: `Naadamy: ${code} бол таны код / is your code`, text: `${mn}\n\n${en}`, html: `<p>${mn}</p><hr><p>${en}</p>` };
-  }
-
-  async function signup(message) {
-    if (!enabled) return { ok: false, reason: 'email-off' };
-    const email = emailText(message.email);
-    if (!email) return { ok: false, reason: 'email-invalid' };
-    if (!passwordOk(message.password)) return { ok: false, reason: 'weak-password' };
-    if (await accounts.byEmail(email)) return { ok: false, reason: 'taken' };
-    sweep();
-    const t = now(), times = sends.get(email) || [];
-    if (times.length >= SENDS_PER_HOUR || sentToday.length >= SENDS_PER_DAY || (pending.size >= PENDING_MAX && !pending.has(email))) return { ok: false, reason: 'busy' };
-    const code = String(crypto.randomInt(1_000_000)).padStart(6, '0');
-    const record = await passwordRecord(message.password);
-    try {
-      await deliver(codeMail(email, code));
-    } catch (error) {
-      console.error('Email auth: the code could not be sent:', error.message);
-      return { ok: false, reason: 'email-failed' };
-    }
-    sends.set(email, [...times, t]); sentToday.push(t);
-    pending.set(email, { ...record, code: codeHash(email, code), until: t + CODE_MS, tries: 0 });
-    return { ok: true };
-  }
-
-  async function verify(message) {
-    const email = emailText(message.email), code = String(message.code || '').trim();
-    const guest = message.id !== undefined || message.ticket !== undefined;
-    const guestId = String(message.id || ''), guestTicket = String(message.ticket || '');
-    if (guest && (!PLAYER_ID.test(guestId) || !PLAYER_TICKET.test(guestTicket) || !(await roomStore.authenticatePlayer(guestId, guestTicket)))) return { ok: false, reason: 'identity' };
-    sweep();
-    const p = pending.get(email);
-    if (!p) return { ok: false, reason: 'expired' };
-    if (!CODE.test(code) || !sameHex(codeHash(email, code), p.code)) {
-      if (++p.tries >= CODE_TRIES) { pending.delete(email); return { ok: false, reason: 'expired' }; }
-      return { ok: false, reason: 'code', left: CODE_TRIES - p.tries };
-    }
-    pending.delete(email); // a code works once
-    const id = guest ? guestId : 'p' + crypto.randomBytes(8).toString('hex'), ticket = guest ? guestTicket : crypto.randomBytes(32).toString('hex');
-    if (!guest && !(await roomStore.authenticatePlayer(id, ticket))) return { ok: false, reason: 'storage' }; // the first ticket of an id makes its identity
-    if (!(await accounts.create({ email, id, hash: p.hash, salt: p.salt }))) return { ok: false, reason: 'taken' };
-    return { ok: true, id, ticket, ready: false };
-  }
-
-  /** The account at once, with no mail: the address is not proved to be this person's. A guest sends its `id` and `ticket`. */
+  /** The account at once, with no mail: the address is not proved to be this person's. An older save sends its `id` and `ticket`. */
   async function register(message) {
     const email = emailText(message.email);
     if (!email) return { ok: false, reason: 'email-invalid' };
@@ -271,7 +203,7 @@ module.exports = function createEmailAuth(roomStore, { dataDir, cloudOf = async 
     return { ok: true, id, ticket };
   }
 
-  const ACTS = { signup, verify, register, login, profile, add };
+  const ACTS = { register, login, profile, add };
   function handle(req, res) {
     const reply = (status, body) => { res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }); res.end(JSON.stringify(body)); };
     if (req.method !== 'POST') return reply(405, { ok: false, reason: 'method' });
@@ -291,5 +223,5 @@ module.exports = function createEmailAuth(roomStore, { dataDir, cloudOf = async 
     });
   }
 
-  return { handle, init: () => accounts.init(), forget: (ids) => accounts.forget(ids), enabled };
+  return { handle, init: () => accounts.init(), forget: (ids) => accounts.forget(ids) };
 };

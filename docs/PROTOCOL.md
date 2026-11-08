@@ -89,16 +89,11 @@ A grown-up can add an email for the family and get a **weekly report** of each c
 
 | `act` | Fields | Answer when `ok` |
 |---|---|---|
-| `register` | `email, password`, and `id, ticket` for a guest | `{ ok, id, ticket, ready: false }`: the account at once, with no mail, so the address is not proved. The game uses this. Refused: `email-invalid`, `weak-password`, `taken`, `identity` |
-| `signup` | `email, password` | `{ ok }`: a 6-digit code is mailed. Refused: `email-invalid`, `weak-password` (8–64 characters), `taken`, `busy` (3 mails an hour per address), `email-failed`, `email-off` |
-| `verify` | `email, code` | `{ ok, id, ticket, ready: false }`: the account and its player exist. Refused: `code` with `left`, `expired` (15 minutes or 5 wrong tries), `taken` |
+| `register` | `email, password`, and `id, ticket` for an older save with no email | `{ ok, id, ticket, ready: false }`: the account and its player at once, with no mail, so the address is not proved. With `id, ticket` the account belongs to that player. Refused: `email-invalid`, `weak-password` (8–64 characters), `taken` (also when the player already has an email), `identity` |
 | `login` | `email, password` | `{ ok, id, ticket, ready, name, age, avatar, cloud, second? }`: a new device ticket. `second` is `{ id, ticket, name, age, avatar, cloud }` when the account has a second player. Refused: `wrong` (with `left` for a known address), `locked` with `wait`, `erased` |
 | `profile` | `id, ticket, name, age, avatar` | `{ ok }`: sets `ready`. Until then the game asks the name and mascot again after a login |
 | `add` | `id, ticket, name, age, avatar` | `{ ok, id, ticket }`: the account's first player (`id, ticket`) makes the second. An account holds at most 2 players. Refused: `full`, `identity`, `invalid` |
 
-A guest (a player made on the device, with no account) links an email with `signup`, then `verify` with its own `id, ticket` added: the account then belongs to that player, and `verify` answers with the same `id` and `ticket`. Refused: `identity` for a wrong ticket, `taken` when the player already has an email.
-
-Without `RESEND_API_KEY` and `EMAIL_FROM` the code is printed to the server log, except in production, where `signup` answers `email-off`.
 
 ## Voice clips (memory book)
 

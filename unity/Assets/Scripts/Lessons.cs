@@ -27,7 +27,6 @@ public static class Lessons
         else if (f.FieldType == typeof(string[])) f.SetValue(st, v.IsNull ? null : v.Strings().ToArray());
     }
     public static void SetFloat(SceneState st, string k, float val) { var f = typeof(SceneState).GetField(k); if (f != null && f.FieldType == typeof(float)) f.SetValue(st, val); }
-    public static float GetFloat(SceneState st, string k) { var f = typeof(SceneState).GetField(k); return f != null && f.FieldType == typeof(float) ? (float)f.GetValue(st) : 0; }
 }
 
 public sealed partial class Game

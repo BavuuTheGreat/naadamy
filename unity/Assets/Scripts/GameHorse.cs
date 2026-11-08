@@ -69,16 +69,6 @@ public sealed partial class Game
     }
     Race race;
 
-    static Race RacePath(int laps)
-    {
-        var r = new Race();
-        for (int l = 0; l < laps; l++) r.P.AddRange(World.LAP);
-        r.P.Add(World.LAP[0]);
-        r.cum.Add(0);
-        for (int i = 1; i < r.P.Count; i++) r.cum.Add(r.cum[i - 1] + (r.P[i] - r.P[i - 1]).magnitude);
-        r.total = r.cum[r.cum.Count - 1];
-        return r;
-    }
     static (float x, float y, int face) PointAt(Race r, float s, float lane)
     {
         int i = 1; while (i < r.P.Count - 1 && r.cum[i] < s) i++;

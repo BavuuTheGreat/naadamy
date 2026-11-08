@@ -891,9 +891,4 @@ public static partial class Px
         }
         cache[key] = x; return x;
     }
-    public static PxCanvas CoinIcon()
-    {
-        if (cache.TryGetValue("coin", out var hit)) return hit;
-        var x = new PxCanvas(9, 9); Blob(x, 4, 4, 3, 3, K.gold, K.goldD); P(x, 3, 3, K.white); R(x, 4, 3, 1, 3, K.goldD); cache["coin"] = x; return x;
-    }
 }
