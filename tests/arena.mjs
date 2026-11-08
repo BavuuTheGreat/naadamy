@@ -1,6 +1,6 @@
 // The online arena end to end, on a real server (JSON files, or the database in DATABASE_URL): wrestler accounts over
 // /api/account (unique usernames, passwords, login on another device, rename, delete), then over the WebSocket friends,
-// a challenge between friends, ranked matchmaking, a full sparring bout with the CPU, a dropped connection that comes
+// a 5-second duel in a room with a code, ranked matchmaking, a full sparring bout with the CPU, a dropped connection that comes
 // back, the boards and the record. Bouts run fast here (ARENA_TICK_MS). Run with DATABASE_URL='' to use JSON files.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -89,25 +89,61 @@ try {
   assert.equal((await a.next(t('fr-res'))).reason, 'no-account');
   ok('friends: add by username, see the request, accept, then each other online in the list');
 
-  // ---------------------------------------------------------------- a challenge between friends, quit midway
-  a.send({ t: 'ar-challenge', u: 'Sukhee' });
-  assert.equal((await a.next(t('ar-err'))).reason, 'not-friends');
-  a.send({ t: 'ar-challenge', u: 'Dorjoo' });
-  await a.next(t('ar-sent'));
-  const inv = await b.next(t('ar-invite'));
-  assert.equal(inv.u, 'Bataa');
-  b.send({ t: 'ar-accept', u: 'Bataa' });
-  const sa = await a.next(t('ar-start')), sb = await b.next(t('ar-start'));
-  assert.equal(sa.mode, 'friend'); assert.equal(sa.id, sb.id); assert.notEqual(sa.side, sb.side);
-  assert.equal(sa.opp.u, 'Dorjoo'); assert.equal(sb.opp.u, 'Bataa');
-  await new Promise((r) => setTimeout(r, 400));
-  assert.ok(a.last.st && a.last.st.id === sa.id && Array.isArray(a.last.st.f), 'snapshots arrive');
-  a.send({ t: 'ar-in', m: 0, p: 16 });
+  // ---------------------------------------------------------------- a 5-second duel in a room with a code
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  a.send({ t: 'ar-room-join', code: 'ZZZZZ' });
+  assert.equal((await a.next(t('ar-err'))).reason, 'no-room');
+  a.send({ t: 'ar-room-open' });
+  const { code } = await a.next(t('ar-room'));
+  assert.match(code, /^[ABCDEFGHJKMNPQRSTUVWXYZ]{5}$/);
+  a.send({ t: 'ar-room-join', code });
+  assert.equal((await a.next(t('ar-err'))).reason, 'own-room');
+  b.send({ t: 'ar-room-join', code: code.toLowerCase() });
+  const da = await a.next(t('ar-duel')), db = await b.next(t('ar-duel'));
+  assert.equal(da.id, db.id); assert.notEqual(da.side, db.side); assert.equal(da.skill, db.skill); assert.deepEqual(da.arrows, db.arrows); assert.equal(da.seed, db.seed);
+  assert.deepEqual([da.lead, da.ms, da.opp.u, db.opp.u], [3000, 5000, 'Dorjoo', 'Bataa']);
+  a.send({ t: 'ar-queue' });
+  assert.equal((await a.next(t('ar-err'))).reason, 'in-match');
+  a.send({ t: 'ar-duel-score', q: 1 }); // before the start: not counted
+  await sleep(da.lead + 100);
+  a.send({ t: 'ar-duel-score', q: 0.9 });
+  b.send({ t: 'ar-duel-score', q: 0.5 });
+  const ea = await a.next(t('ar-duel-end')), eb = await b.next(t('ar-duel-end'));
+  assert.equal(ea.winner, da.side, 'the better score wins'); assert.equal(ea.reason, 'done');
+  assert.ok(ea.scores[da.side] > ea.scores[db.side]); assert.equal(eb.winner, ea.winner);
+  assert.deepEqual([ea.coins, ea.xp, eb.coins, eb.xp], [5, 10, 0, 5]);
+  assert.equal(ea.rating, undefined);
+  a.send({ t: 'ar-hello' });
+  const afterDuel = await a.next(t('ar-me'));
+  assert.deepEqual([afterDuel.rating, afterDuel.w, afterDuel.l, afterDuel.n], [1000, 0, 0, 0], 'a duel changes no rating or record');
+  // the same two play again, and quitting hands the win over and closes the room
+  a.send({ t: 'ar-duel-again' });
+  await b.next(t('ar-duel-again'));
+  b.send({ t: 'ar-duel-again' });
+  const again = await a.next(t('ar-duel')); await b.next(t('ar-duel'));
+  assert.notEqual(again.id, da.id);
   a.send({ t: 'ar-quit' });
-  const ea = await a.next(t('ar-end')), eb = await b.next(t('ar-end'));
-  assert.equal(ea.winner, sb.side); assert.equal(ea.reason, 'quit');
-  assert.ok(eb.rating.after > eb.rating.before && ea.rating.after < ea.rating.before);
-  ok('a challenge between friends: invite, accept, both get the bout and its snapshots; quitting hands the win over');
+  const qa = await a.next(t('ar-duel-end')), qb = await b.next(t('ar-duel-end'));
+  assert.equal(qa.reason, 'quit'); assert.equal(qb.winner, 1 - again.side);
+  await a.next(t('ar-room-closed')); await b.next(t('ar-room-closed'));
+  b.send({ t: 'ar-room-join', code });
+  assert.equal((await b.next(t('ar-err'))).reason, 'no-room', 'a closed room is gone');
+  ok('a duel: a 5-letter code, the same game for both, the better score wins, no rating change; play again; quitting closes the room');
+  // a host who leaves takes the room with them, and 10 wrong codes lock the player out for a while
+  const c3 = connect(C); await c3.ready; c3.send({ t: 'ar-hello' }); await c3.next(t('ar-me'));
+  c3.send({ t: 'ar-room-open' });
+  const left = (await c3.next(t('ar-room'))).code;
+  c3.ws.close(); await c3.closed;
+  await sleep(50);
+  b.send({ t: 'ar-room-join', code: left });
+  assert.equal((await b.next(t('ar-err'))).reason, 'no-room');
+  const c4 = connect(C); await c4.ready; c4.send({ t: 'ar-hello' }); await c4.next(t('ar-me'));
+  for (let i = 0; i < 10; i++) { c4.send({ t: 'ar-room-join', code: 'ZZZZZ' }); assert.equal((await c4.next(t('ar-err'))).reason, 'no-room'); await sleep(60); }
+  c4.send({ t: 'ar-room-join', code: 'ZZZZZ' });
+  const locked = await c4.next(t('ar-err'));
+  assert.equal(locked.reason, 'locked'); assert.equal(locked.wait, 300);
+  c4.ws.close();
+  ok('rooms: a waiting room closes with its host; 10 wrong codes lock a player out for 5 minutes');
 
   // ---------------------------------------------------------------- ranked matchmaking, and coming back after a dropped connection
   a.send({ t: 'ar-queue' }); await a.next(t('ar-queued'));
@@ -140,19 +176,19 @@ try {
   a.send({ t: 'ar-board', k: 'global' });
   const gb = await a.next(t('ar-board'));
   const names = gb.rows.map((r) => r.u);
-  assert.ok(names.indexOf('Bataa') >= 0 && names.indexOf('Bataa') < names.indexOf('Dorjoo'), 'one win each, but the ranked win over the friendly one is worth more');
+  assert.ok(names.indexOf('Bataa') >= 0 && names.indexOf('Bataa') < names.indexOf('Dorjoo'), 'the ranked win puts Bataa above Dorjoo');
   const rowA = gb.rows.find((r) => r.me);
-  assert.equal(rowA.u, 'Bataa'); assert.deepEqual([rowA.w, rowA.l], [1, 1], 'the CPU spar does not count'); assert.ok(rowA.lvl >= 1 && rowA.xp > 0);
+  assert.equal(rowA.u, 'Bataa'); assert.deepEqual([rowA.w, rowA.l], [1, 0], 'duels and the CPU spar do not count'); assert.ok(rowA.lvl >= 1 && rowA.xp > 0);
   await new Promise((r) => setTimeout(r, 2100));
   a.send({ t: 'ar-board', k: 'friends' });
   const fb = await a.next(t('ar-board'));
   assert.deepEqual(fb.rows.map((r) => r.u).sort(), ['Bataa', 'Dorjoo']);
   a.send({ t: 'ar-history' });
   const hist = await a.next(t('ar-history'));
-  assert.deepEqual(hist.list.map((h) => [h.mode, h.opp, h.res]), [['cpu', 'CPU', 'loss'], ['ranked', 'Dorjoo', 'win'], ['friend', 'Dorjoo', 'loss']]);
+  assert.deepEqual(hist.list.map((h) => [h.mode, h.opp, h.res]), [['cpu', 'CPU', 'loss'], ['ranked', 'Dorjoo', 'win'], ['friend', 'Dorjoo', 'loss'], ['friend', 'Dorjoo', 'win']]);
   a.send({ t: 'fr-list' });
   const h2h = (await a.next(t('fr-list'))).friends[0];
-  assert.deepEqual([h2h.hw, h2h.hl], [1, 1]);
+  assert.deepEqual([h2h.hw, h2h.hl], [2, 1]);
   ok('boards: everyone by rating with level and XP, and friends only; the record and head-to-head with each friend');
 
   // ---------------------------------------------------------------- rename and delete

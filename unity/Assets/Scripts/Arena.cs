@@ -1,6 +1,7 @@
 // Бөхийн өргөө, the online arena (server/arena.js, accounts.js): a wrestler account with a unique username and a password,
-// friends, ranked matchmaking, challenges between friends, sparring with the CPU, and the boards (rating, wins, level, XP).
-// The bouts themselves are in ArenaFight.cs. Everything is kept on the server; this side shows it and sends what is asked.
+// friends, ranked matchmaking, duels with a friend by a 5-letter code, sparring with the CPU, and the boards (rating, wins,
+// level, XP). The bouts are in ArenaFight.cs, the duels in ArenaDuel.cs. Everything is kept on the server; this side shows
+// it and sends what is asked.
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -68,6 +69,8 @@ public sealed partial class Game
         public readonly List<ArenaHist> hist = new List<ArenaHist>();
         public bool queued, friendsKnown; public int queueN; public float queuedAt, helloAt = -99;
         public ArenaFightModal fight;
+        public string roomCode;   // the code of the room we opened and wait in
+        public ArenaDuelModal duel;
     }
     public readonly ArenaInfo arena = new ArenaInfo();
 
@@ -103,7 +106,7 @@ public sealed partial class Game
     }
     public void ArenaHello() { arena.helloAt = Time.realtimeSinceStartup; net.Send("{\"t\":\"ar-hello\"}"); }
     /** The connection dropped: the queue is gone (the server forgets it), a bout waits for us to come back. */
-    public void ArenaLost() { arena.queued = false; arena.known = false; }
+    public void ArenaLost() { arena.queued = false; arena.known = false; arena.roomCode = null; arena.duel?.OnLost(); }
 
     public void OnArenaMsg(J m)
     {
@@ -145,22 +148,21 @@ public sealed partial class Game
                 return;
             case "ar-st": A.fight?.OnSnap(m); return;
             case "ar-end": A.fight?.OnEnd(this, m); ArenaHello(); return;
-            case "ar-invite":
-            {
-                string u = Clean(m["u"].S);
-                if (A.fight != null && !A.fight.Over) return;
-                Sfx.Chime();
-                Open(new ConfirmModal(Loc.L("Барилдах урилга!", "Wrestling challenge!"), Loc.L($"{u} ({TierName(m["tier"].S)}, {m["rating"].I}) тантай өргөөнд барилдахыг урьж байна.", $"{u} ({TierName(m["tier"].S)}, {m["rating"].I}) challenges you in the arena."),
-                    () => ArenaSend("ar-accept", "u", u)) { onNo = () => ArenaSend("ar-decline", "u", u) });
+            case "ar-room": A.queued = false; A.roomCode = m["code"].S; return;
+            case "ar-room-closed": A.roomCode = null; A.duel?.OnRoomClosed(); return;
+            case "ar-duel":
+                A.queued = false; A.roomCode = null;
+                if (A.duel != null) A.duel.Replaced = true;
+                CloseAll();
+                A.duel = new ArenaDuelModal(m); Open(A.duel); Sfx.Horn();
                 return;
-            }
-            case "ar-sent": Toast(Loc.L($"{Clean(m["u"].S)}-г урилаа. Хариуг хүлээж байна…", $"Challenged {Clean(m["u"].S)}. Waiting for an answer…")); return;
-            case "ar-declined": Toast(Loc.L($"{Clean(m["u"].S)} одоохондоо барилдахгүй гэлээ.", $"{Clean(m["u"].S)} declined for now.")); return;
+            case "ar-duel-end": A.duel?.OnEnd(this, m); ArenaHello(); return;
+            case "ar-duel-again": A.duel?.OnAgain(); return;
             case "ar-err":
             {
-                string why = m["reason"].S, u = Clean(m["u"].S);
-                Toast(why == "not-friends" ? Loc.L("Зөвхөн найзаа урьж болно.", "You can only challenge friends.") : why == "offline" ? Loc.L($"{u} одоо сүлжээнд алга.", $"{u} is offline.")
-                    : why == "busy" ? Loc.L($"{u} одоо барилдаж байна.", $"{u} is in a bout right now.") : why == "no-invite" ? Loc.L("Урилгын хугацаа дууссан.", "The challenge has expired.")
+                string why = m["reason"].S;
+                Toast(why == "no-room" ? Loc.L("Ийм код олдсонгүй. Дахин шалгаарай.", "No room with that code. Check it and try again.") : why == "own-room" ? Loc.L("Энэ бол таны өөрийн код. Найздаа хэлээрэй.", "That is your own code. Give it to your friend.")
+                    : why == "locked" ? Loc.L($"Олон удаа буруу код орууллаа. {Math.Max(1, (m["wait"].I + 59) / 60)} минутын дараа оролдоорой.", $"Too many wrong codes. Try again in {Math.Max(1, (m["wait"].I + 59) / 60)} min.")
                     : why == "in-match" ? Loc.L("Та барилдаан дунд байна.", "You are in a bout.") : why == "no-account" ? Loc.L("Эхлээд бөхийн бүртгэл үүсгэнэ үү.", "Make a wrestler account first.") : Loc.L("Серверт алдаа гарлаа.", "Server error."));
                 return;
             }
@@ -183,8 +185,8 @@ public sealed partial class Game
     {
         string tab = "play", boardK = "global";
         string user = "", addName = "", newName = "", confirmName = "";
-        string err = "", note = "", availFor = "", avail = "";
-        bool busy, askedLists; float checkAt = -1; Vector2 scroll;
+        string err = "", note = "", availFor = "", avail = "", joinCode = "";
+        bool busy, askedLists, friendMenu; float checkAt = -1; Vector2 scroll;
         public override float Width => 700;
         public override (string who, string face)? Speaker => ("zasuul", "proud");
 
@@ -295,17 +297,28 @@ public sealed partial class Game
                 g.Fact(Loc.L($"Тэнцүү хүчтэй өрсөлдөгч хайж байна… {secs} сек · дараалалд {A.queueN}", $"Looking for an opponent of your level… {secs}s · {A.queueN} in the queue"), true, Loc.L("Чансааны барилдаан", "Ranked bout"));
                 if (g.Btn(Loc.L("Болих", "Cancel"), false, 40)) g.Later(() => g.net.Send("{\"t\":\"ar-cancel\"}"));
             }
-            else if (g.Btn(Loc.L("Чансааны барилдаан", "Ranked bout") + "\n<size=" + g.Ts(10) + ">" + Loc.L("Ойролцоо оноотой өрсөлдөгчтэй таарч, оноо хожно", "Matched with someone near your rating; win to climb") + "</size>", true, 60))
-                g.Later(() => g.net.Send("{\"t\":\"ar-queue\"}"));
+            else if (A.roomCode != null)
+            {
+                g.Fact(Loc.L("Энэ кодыг найздаа хэлээрэй. Найз чинь орж ирмэгц эхэлнэ.", "Give this code to your friend. It starts as soon as they join."), true, Loc.L("Найзтайгаа", "With a friend"));
+                GUILayout.Label(A.roomCode, new GUIStyle(g.sBig) { alignment = TextAnchor.MiddleCenter, fontSize = g.Ts(40) });
+                if (g.Btn(Loc.L("Болих", "Cancel"), false, 40)) g.Later(() => g.net.Send("{\"t\":\"ar-room-close\"}"));
+            }
+            else if (friendMenu) FriendMenu(g);
+            else
+            {
+                if (g.Btn(Loc.L("Найзтайгаа", "With a friend") + "\n<size=" + g.Ts(10) + ">" + Loc.L("5 үсэгтэй кодоор, 5 секундэд хэн нь сайн, хурдан хийнэ", "By a 5-letter code: 5 seconds, the better and quicker one wins") + "</size>", true, 60)) g.Later(() => friendMenu = true);
+                if (g.Btn(Loc.L("Чансааны барилдаан", "Ranked bout") + "\n<size=" + g.Ts(10) + ">" + Loc.L("Санамсаргүй хүнтэй таарч, оноо хожно", "Matched with a random wrestler; win to climb") + "</size>", true, 60))
+                    g.Later(() => g.net.Send("{\"t\":\"ar-queue\"}"));
+            }
+            g.Gap(4);
             GUILayout.Label(Loc.L("Компьютертэй дасгал (оноонд нөлөөлөхгүй)", "Spar with the CPU (rating unchanged)"), g.sSmall);
             GUILayout.BeginHorizontal();
             for (int lv = 1; lv <= 3; lv++)
             {
                 string label = lv == 1 ? Loc.L("Багш (амархан)", "Coach (easy)") : lv == 2 ? Loc.L("Начин (дунд)", "Falcon (medium)") : Loc.L("Аварга (хэцүү)", "Titan (hard)");
-                if (g.Btn(label, false, 40, !A.queued)) { int l = lv; g.Later(() => g.net.Send("{\"t\":\"ar-cpu\",\"lv\":" + l + "}")); }
+                if (g.Btn(label, false, 40, !A.queued && A.roomCode == null)) { int l = lv; g.Later(() => g.net.Send("{\"t\":\"ar-cpu\",\"lv\":" + l + "}")); }
             }
             GUILayout.EndHorizontal();
-            g.Small(Loc.L("Найзаа урих бол «Найзууд» хэсэгт ор.", "To challenge a friend, open Friends."));
             if (A.hist.Count > 0)
             {
                 GUILayout.Label("<b>" + Loc.L("Сүүлийн барилдаанууд", "Recent bouts") + "</b>", g.sLabel);
@@ -316,6 +329,17 @@ public sealed partial class Game
                     GUILayout.Label($"{res} · {h.opp} · {mode}" + (h.delta != 0 ? $" · {(h.delta > 0 ? "+" : "")}{h.delta}" : ""), g.sSmall);
                 }
             }
+        }
+
+        void FriendMenu(Game g)
+        {
+            if (g.Btn(Loc.L("Код үүсгэх", "Make a code"), true, 48)) g.Later(() => { friendMenu = false; joinCode = ""; g.net.Send("{\"t\":\"ar-room-open\"}"); });
+            GUILayout.Label(Loc.L("Найзын кодоор орох (5 үсэг)", "Join with your friend's code (5 letters)"), g.sSmall);
+            GUILayout.BeginHorizontal();
+            joinCode = new string(GUILayout.TextField(joinCode, 5, Field(g), GUILayout.MinHeight(g.U(38))).ToUpperInvariant().Where(c => c >= 'A' && c <= 'Z').ToArray());
+            if (g.SmallBtn(Loc.L("Орох", "Join"), true, 90, joinCode.Length == 5)) { string code = joinCode; g.Later(() => g.ArenaSend("ar-room-join", "code", code)); }
+            GUILayout.EndHorizontal();
+            if (g.Btn(Loc.L("Буцах", "Back"), false, 32)) g.Later(() => friendMenu = false);
         }
 
         // ---------------------------------------------------------------- friends
@@ -344,7 +368,6 @@ public sealed partial class Game
             foreach (var f in A.friends)
             {
                 GUILayout.BeginHorizontal(g.sPanel); Person(g, f, true);
-                if (g.SmallBtn(Loc.L("Урих", "Challenge"), true, 100, f.on && !f.busy)) { var u = f.u; g.Later(() => g.ArenaSend("ar-challenge", "u", u)); }
                 if (g.SmallBtn("✕", false, 40)) { var u = f.u; g.Later(() => g.Open(new ConfirmModal(Loc.L("Найзаас хасах уу?", "Remove friend?"), u, () => g.ArenaSend("fr-remove", "u", u)))); }
                 GUILayout.EndHorizontal();
             }
@@ -433,6 +456,8 @@ public sealed partial class Game
         // ---------------------------------------------------------------- how to wrestle
         void How(Game g)
         {
+            g.Text(Loc.L("<b>Найзтайгаа:</b> нэг нь код үүсгээд, нөгөө нь тэр 5 үсэгтэй кодоор орно. Хоёулаа ижил тоглоомыг 5 секундэд хийж, хэн нь сайн, хурдан хийсэн нь ялна. Оноонд нөлөөлөхгүй.",
+                "<b>With a friend:</b> one makes a code, the other joins with those 5 letters. Both play the same game for 5 seconds, and the better, quicker one wins. It doesn't change your rating."));
             g.Fact(Loc.L("Тоглогч бүр яг адилхан бөх. Санамсаргүй зүйл байхгүй: цаг тааруулж, өрсөлдөгчөө уншиж, зөв хариулсан нь ялна.", "Every wrestler is the same. Nothing is random: timing, reading your opponent and the right answer win."), true, Loc.L("Ур чадвар", "Skill"));
             g.Text(Loc.L("<b>Удирдлага</b> (гар): ← → алхах (хоёр дарвал гүйх) · <b>J</b> түлхэх · <b>K</b> шилбэ (→K мөрөөр дайрах) · <b>L</b> барьцаа (→L шүүрэх) · <b>Space/I</b> тэнцвэр барих · <b>O</b> аваргын мэх. Утсан дээр дэлгэцийн товчнууд.",
                 "<b>Controls</b> (keyboard): ← → walk (double-tap to dash) · <b>J</b> shove (→J push) · <b>K</b> sweep (→K shoulder charge) · <b>L</b> grab (→L lunge) · <b>Space/I</b> brace · <b>O</b> champion's throw. On a phone, the buttons on screen."));

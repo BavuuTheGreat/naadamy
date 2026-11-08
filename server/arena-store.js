@@ -174,7 +174,7 @@ function jsonStore(dataDir) {
       const stats = readJson(files.stats), matches = readJson(files.matches);
       const sa = statsOf(stats, a), sb = b ? statsOf(stats, b) : null;
       let after = null;
-      if (b) {
+      if (b && k) { // k 0: on the record, but rating, wins and losses stay as they were
         after = applyResult(sa, sb, winner, k);
         put(stats, a, after[0]); put(stats, b, after[1]);
         writeJson(files.stats, stats);
@@ -429,7 +429,7 @@ function pgStore(pool) {
           const r = await client.query('SELECT * FROM naadamy_arena_stats WHERE id = ANY($1::text[]) ORDER BY id FOR UPDATE', [[a, b]]);
           const get = (pid) => statRow(r.rows.find((row) => row.id === pid));
           before = [get(a), get(b)];
-          if (r.rows.length === 2) {
+          if (r.rows.length === 2 && k) { // k 0: on the record, but rating, wins and losses stay as they were
             after = applyResult(before[0], before[1], winner, k);
             for (const [pid, s] of [[a, after[0]], [b, after[1]]]) {
               await client.query(`UPDATE naadamy_arena_stats SET rating = $2, wins = $3, losses = $4, draws = $5, streak = $6, best_streak = $7, matches = $8, updated_at = now() WHERE id = $1`,
