@@ -9,7 +9,7 @@ public static class Voice
 {
     static AudioSource src;
     /** Speak story lines: the setting is on and the game is in Mongolian. */
-    public static bool On => Game.I != null && Game.I.App != null && Game.I.App.voice && !Game.I.App.en;
+    public static bool On => Game.I != null && Game.I.App != null && Game.I.App.voice && !Game.I.App.en && !Music.Muted;
     /** The clip's name: the first 12 hex digits of SHA-1("who|words"), as Tools/tts/voice.mjs names it. */
     public static string Id(string who, string mn)
     {

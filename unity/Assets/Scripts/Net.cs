@@ -525,7 +525,7 @@ public sealed partial class Game
                     : n.status == "solo" ? n.failWhy ?? Loc.L("Сервертэй холбогдоогүй байна.", "Not connected to the server.") : Loc.L("Холбогдож байна…", "Connecting…"));
                 GUILayout.BeginHorizontal();
                 code = GUILayout.TextField(code ?? "", 6, new GUIStyle(g.sBtn) { alignment = TextAnchor.MiddleCenter }, GUILayout.MinHeight(g.U(40))).ToUpperInvariant();
-                if (GUILayout.Button(Loc.L("Нэгдэх", "Join"), g.sPrimary, GUILayout.Width(g.U(100)), GUILayout.MinHeight(g.U(40)))) g.Later(() =>
+                if (GUILayout.Button(Loc.L("Нэгдэх", "Join"), g.Fit(g.sPrimary, Loc.L("Нэгдэх", "Join"), g.U(100)), GUILayout.Width(g.U(100)), GUILayout.MinHeight(g.U(40)))) g.Later(() =>
                 {
                     string c = (code ?? "").Trim().ToUpperInvariant(); if (c.Length != 6 || !c.All(ch => ch >= 'A' && ch <= 'Z')) { g.Toast(Loc.L("Код 6 латин үсэгтэй байна.", "The code has 6 letters.")); return; }
                     code = ""; n.JoinRoom(g, c);

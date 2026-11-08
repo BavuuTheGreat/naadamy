@@ -27,7 +27,7 @@ public sealed partial class Game
         const int X0 = 34, GROUND = 94; const float G = 120;
         readonly Live live = new Live(192, 108); readonly Look look;
         int round, arrow, hits, wind; string phase = "aim", msg; float angle = 0.3f, power = 0.5f, t0, lockA = -1, cheer = -9, waitUntil;
-        bool over, flying; float sx, sy, svx, svy; readonly System.Collections.Generic.List<Vector2> trail = new System.Collections.Generic.List<Vector2>();
+        bool over, flying; float overT, sx, sy, svx, svy; readonly System.Collections.Generic.List<Vector2> trail = new System.Collections.Generic.List<Vector2>();
         readonly System.Collections.Generic.List<(float x, bool hit)> marks = new System.Collections.Generic.List<(float, bool)>();
         (int coins, int xp, int level) rw; string titleNow; bool newBest; Tx fact;
         public ArcheryModal(Game g)
@@ -51,7 +51,7 @@ public sealed partial class Game
         }
         public override void Press(Game g)
         {
-            if (over) { g.Close(); return; }
+            if (over) { if (Time.time - overT > 0.8f) g.Close(); return; } // the press that shot the last arrow doesn't skip the score
             if (phase == "aim") { lockA = angle; phase = "power"; t0 = Time.time; msg = Loc.L("Одоо хүчээ сонго!", "Now choose your power!"); }
             else if (phase == "power")
             {
@@ -75,7 +75,7 @@ public sealed partial class Game
         }
         void Finish(Game g)
         {
-            over = true; phase = "done"; var a = g.V.arch;
+            over = true; overT = Time.time; phase = "done"; var a = g.V.arch;
             a.games++; newBest = hits > a.best; if (newBest) a.best = hits;
             foreach (var x in Rules.ARCH_TITLES) if (hits >= x.need) { titleNow = x.t.ToString(); break; }
             rw = g.Reward(hits * 4, hits * 6); g.V.Save(); fact = Rules.Pick(Rules.ARCH_FACTS);

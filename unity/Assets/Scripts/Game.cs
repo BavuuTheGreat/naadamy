@@ -51,7 +51,7 @@ public sealed partial class Game : MonoBehaviour
         Input.multiTouchEnabled = true;
         App = AppState.Load(); Loc.En = App.en;
         Sfx.Init(gameObject); Sfx.On = App.sound;
-        Music.Init(gameObject, App.music, App.musicVolume);
+        Music.Mute(App.muted); Music.Init(gameObject, App.music, App.musicVolume);
 
         cam = Camera.main;
         if (cam == null) { cam = new GameObject("Camera").AddComponent<Camera>(); cam.tag = "MainCamera"; }

@@ -60,7 +60,20 @@ public static class Family
     public static string ServerOf(Game g, SaveData p)
     {
         if (p != null && IsAddress(p.server)) return p.server; // a code typed into the box by mistake ("m8qhg") is no address: skip it
-        return IsAddress(g.App.server) ? g.App.server : HOSTED;
+        return IsAddress(g.App.server) ? g.App.server : PageServer() ?? HOSTED;
+    }
+    /** A browser build served by a Naadamy server on this computer or the home Wi-Fi (localhost, 127.x, 192.168.x, 10.x)
+     *  talks to that same server. Anywhere else (Vercel) it is null and the hosted one is used. */
+    static string PageServer()
+    {
+#if UNITY_WEBGL && !UNITY_EDITOR
+        if (!System.Uri.TryCreate(UnityEngine.Application.absoluteURL, System.UriKind.Absolute, out var u) || u.Scheme != "http") return null;
+        string h = u.Host;
+        bool local = h == "localhost" || h.StartsWith("127.") || h.StartsWith("192.168.") || h.StartsWith("10.");
+        return local ? $"{u.Scheme}://{u.Authority}" : null;
+#else
+        return null;
+#endif
     }
     /** Looks like a server address: localhost, a name or IP with a dot, or anything with a :port (an optional http(s)/ws(s):// in front). */
     public static bool IsAddress(string s)

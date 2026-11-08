@@ -251,7 +251,7 @@ public sealed partial class Game
             GUI.SetNextControlName("basar-input");
             input = GUILayout.TextField(input, 300, new GUIStyle(g.sBtn) { alignment = TextAnchor.MiddleLeft }, GUILayout.MinHeight(g.U(40)));
             bool enter = Event.current.type == EventType.KeyDown && (Event.current.keyCode == KeyCode.Return || Event.current.keyCode == KeyCode.KeypadEnter) && GUI.GetNameOfFocusedControl() == "basar-input";
-            if (GUILayout.Button(Loc.L("Илгээх", "Send"), g.sPrimary, GUILayout.Width(g.U(90)), GUILayout.MinHeight(g.U(40))) || enter) g.Later(() => Send(g, null));
+            if (GUILayout.Button(Loc.L("Илгээх", "Send"), g.Fit(g.sPrimary, Loc.L("Илгээх", "Send"), g.U(90)), GUILayout.Width(g.U(90)), GUILayout.MinHeight(g.U(40))) || enter) g.Later(() => Send(g, null));
             GUILayout.EndHorizontal();
         }
     }

@@ -240,7 +240,7 @@ public sealed partial class Game
         {
             // any finger on the button sprints, so one finger can steer with the joystick while another holds this
             var b = UR(vw - 166, vh - 64, 158, 56); Ui(b); sprintRect = new Rect(b.x + guiOX, b.y + guiOY, b.width, b.height);
-            GUI.Box(b, Loc.L("Чү! (Shift)", "Chü! (Shift)"), sprintHeld ? new GUIStyle(sPrimary) { normal = sPrimary.active } : sPrimary);
+            GUI.Box(b, Loc.L("Чү! (Shift)", "Chü! (Shift)"), Fit(sprintHeld ? new GUIStyle(sPrimary) { normal = sPrimary.active } : sPrimary, Loc.L("Чү! (Shift)", "Chü! (Shift)"), b.width));
         }
     }
 }

@@ -351,7 +351,7 @@ public sealed partial class Game
     {
         bool need = G.stage < 7 && Part("buurees") <= 0 && MyStage < GerRules.DONE;
         Row(Px.Icon("part:buurees"), Loc.L("Гэрийн цагаан бүрээс", "White ger cover"), need ? Loc.L("Эсгийн гадуур хучиж, бороо, нарнаас хамгаална.", "Goes over the felt and keeps out rain and sun.") : "√ " + Loc.L("Танд байгаа", "You have it"));
-        if (need && SmallBtn(GerRules.COVER_PRICE.ToString())) Later(() => { if (V.coins < GerRules.COVER_PRICE) { Toast(Loc.L("Зоос хүрэлцэхгүй байна.", "Not enough coins.")); return; } V.coins -= GerRules.COVER_PRICE; PartAdd("buurees", 1); Sfx.Chime(); Toast(Loc.L("Бүрээс худалдаж авлаа!", "You bought the cover!")); V.Save(); });
+        if (need && SmallBtn(GerRules.COVER_PRICE.ToString())) Later(() => { if (Part("buurees") > 0) return; /* a double click: one cover, paid once */ if (V.coins < GerRules.COVER_PRICE) { Toast(Loc.L("Зоос хүрэлцэхгүй байна.", "Not enough coins.")); return; } V.coins -= GerRules.COVER_PRICE; PartAdd("buurees", 1); Sfx.Chime(); Toast(Loc.L("Бүрээс худалдаж авлаа!", "You bought the cover!")); V.Save(); });
         EndRow();
     }
     /** Ger parts in the bag: wool, felt in the making, and the parts. */

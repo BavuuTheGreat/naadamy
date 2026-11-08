@@ -53,7 +53,7 @@ public sealed partial class Game
                 if (GUI.Button(r, "", mode == m ? g.sSel : g.sBtn)) { var mm = m; g.Later(() => { mode = mm; picked.Clear(); if (mm == "solo") onPick("solo", Me(g)); }); }
                 GUI.DrawTexture(new Rect(r.center.x - g.U(14), r.y + g.U(6), g.U(28), g.U(28)), g.Tex(Emo.Icon(icon)));
                 var st = new GUIStyle(mode == m ? g.sPrimary.Clean() : g.sLabel) { alignment = TextAnchor.UpperCenter };
-                GUI.Label(new Rect(r.x + g.U(4), r.y + g.U(38), r.width - g.U(8), g.U(22)), "<b>" + t1 + "</b>", st);
+                GUI.Label(new Rect(r.x + g.U(4), r.y + g.U(38), r.width - g.U(8), g.U(22)), "<b>" + t1 + "</b>", g.Fit(st, "<b>" + t1 + "</b>", r.width - g.U(8)));
                 GUI.Label(new Rect(r.x + g.U(4), r.y + g.U(58), r.width - g.U(8), g.U(34)), t2, new GUIStyle(st) { fontSize = g.Ts(10) });
             }
             GUILayout.EndHorizontal();
@@ -105,13 +105,14 @@ public sealed partial class Game
     public sealed class QuizRun
     {
         readonly string topic; readonly int n; readonly List<Player> players; readonly Action<int, int, int[]> onFinish;
-        int k, right; public readonly int[] tally; QuizCard card; bool loading;
+        int k, right; public readonly int[] tally; QuizCard card; bool loading, finished;
         public QuizRun(string topic, int n, List<Player> players, Action<int, int, int[]> onFinish) { this.topic = topic; this.n = n; this.players = players ?? new List<Player>(); this.onFinish = onFinish; tally = new int[Math.Max(1, this.players.Count)]; }
         bool Multi => players.Count > 1;
         public void Start(Game g) => Next(g);
         void Next(Game g)
         {
-            if (k >= n) { onFinish(right, n, tally); return; }
+            if (loading || finished) return; // never finish (and reward) twice
+            if (k >= n) { finished = true; onFinish(right, n, tally); return; }
             loading = true; card = null; int who = Multi ? k % players.Count : 0; k++;
             g.StartCoroutine(Basar.Quiz(g, topic, q => { loading = false; card = new QuizCard(q, ok => { if (ok) { right++; tally[who]++; } }); }));
         }
@@ -121,7 +122,7 @@ public sealed partial class Game
             GUILayout.Label($"<b>{k} / {n}</b>", g.sSmall);
             if (Multi) { var p = players[(k - 1) % players.Count]; GUILayout.BeginHorizontal(g.sBtn); g.IconAt(p.face, 24); GUILayout.Label("<b>" + Loc.L($"{p.name}-ийн ээлж", $"{p.name}’s turn") + "</b>", g.sLabel); GUILayout.EndHorizontal(); }
             card.Draw(g);
-            if (card.picked >= 0 && g.Btn(k < n ? Loc.L("Дараагийн асуулт →", "Next question →") : Loc.L("Дуусгах", "Finish"), true, 44)) g.Later(() => Next(g));
+            if (card.picked >= 0 && g.Btn(k < n ? Loc.L("Дараагийн асуулт →", "Next question →") : Loc.L("Дуусгах", "Finish"), true, 44)) { var on = card; g.Later(() => { if (card == on) Next(g); }); } // a double click: one question on, not two (an offline question loads at once)
         }
     }
     public void Scoreboard(List<Player> players, int[] tally)
@@ -366,7 +367,7 @@ public sealed partial class Game
                 g.Box(new Rect(0, 0, Screen.width, Screen.height), Px.Col("#f6efe0"));
                 var safe = Screen.safeArea; float w = Mathf.Min(safe.width - g.U(16), g.U(600));
                 GUILayout.BeginArea(new Rect(safe.x + (safe.width - w) / 2, Screen.height - safe.yMax + g.U(8), w, safe.height - g.U(16)));
-                GUILayout.BeginHorizontal(); if (GUILayout.Button("←", g.sBtn, GUILayout.Width(g.U(48)), GUILayout.Height(g.U(44)))) g.Later(g.Close); GUILayout.Label(Title, g.sTitle); GUILayout.EndHorizontal();
+                GUILayout.BeginHorizontal(); if (GUILayout.Button("←", g.sBtn, GUILayout.Width(g.U(48)), GUILayout.Height(g.U(44)))) g.Later(g.Close); GUILayout.Space(g.U(10)); GUILayout.Label(Title, g.sTitle); GUILayout.EndHorizontal();
                 GUILayout.FlexibleSpace(); GUILayout.BeginVertical(g.sPanel); picker.Draw(g); GUILayout.EndVertical(); GUILayout.FlexibleSpace();
                 GUILayout.EndArea(); return;
             }
@@ -413,7 +414,7 @@ public sealed partial class Game
             g.Text(s["text"].T.ToString());
             switch (ty)
             {
-                case "learn": case "story": if (g.Btn(Loc.L("Цааш →", "Next →"), true, 48)) g.Later(() => Next(g)); break;
+                case "learn": case "story": if (g.Btn(Loc.L("Цааш →", "Next →"), true, 48)) { int at = i; g.Later(() => { if (i == at) Next(g); }); } break; // a double click moves one step, not two
                 case "pick" when s.Has("drop"): break;
                 case "pick":
                     for (int k = 0; k < opts.Count; k++)
@@ -462,7 +463,7 @@ public sealed partial class Game
             }
             if (altMsg != null) Basar(g, altMsg);
             if (say != null) Basar(g, say);
-            if (solved && ty != "learn" && ty != "story" && g.Btn(Loc.L("Цааш →", "Next →"), true, 48)) g.Later(() => Next(g));
+            if (solved && ty != "learn" && ty != "story" && g.Btn(Loc.L("Цааш →", "Next →"), true, 48)) { int at = i; g.Later(() => { if (i == at) Next(g); }); }
             GUILayout.EndVertical();
             if (run) g.EndScroll();
         }

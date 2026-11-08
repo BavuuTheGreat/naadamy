@@ -235,7 +235,7 @@ public sealed partial class Game
             int seen = g.V.seenMarks.Count(s => s.StartsWith(id + ":"));
             GUILayout.BeginVertical(g.sPanel);
             Aimags.DrawLand(land.c, id, Time.time, 160, 80); land.Show(g, 170);
-            GUILayout.BeginHorizontal(); g.IconAt(Aimags.Icon(id), 40); GUILayout.BeginVertical(); GUILayout.Label("<b>" + a.name + "</b>", g.sTitle);
+            GUILayout.BeginHorizontal(); g.IconAt(Aimags.Icon(id), 40); GUILayout.Space(g.U(8)); GUILayout.BeginVertical(); GUILayout.Label("<b>" + a.name + "</b>", g.sTitle);
             g.Small($"{Loc.L("Төв", "Centre")}: {a.center}" + (g.V.aimag == id ? " · " + Loc.L("Миний нутаг", "My home province") : "")); GUILayout.EndVertical(); GUILayout.EndHorizontal();
             GUILayout.EndVertical();
             GUILayout.BeginVertical(g.sPanel);
@@ -265,7 +265,7 @@ public sealed partial class Game
             g.Box(new Rect(0, 0, Screen.width, Screen.height), Px.Col("#f6f4ef"));
             var safe = Screen.safeArea; float top = Screen.height - safe.yMax, w = Mathf.Min(safe.width - g.U(24), g.U(560));
             if (Back && GUI.Button(new Rect(safe.x + g.U(16), top + g.U(16), g.U(44), g.U(40)), "←", g.sWhite)) g.Later(g.Close);
-            if (first && GUI.Button(new Rect(safe.xMax - g.U(16) - g.U(120), top + g.U(16), g.U(120), g.U(40)), Loc.L("Дараа нь", "Later"), g.sWhite)) g.Later(Later);
+            if (first && GUI.Button(new Rect(safe.xMax - g.U(16) - g.U(120), top + g.U(16), g.U(120), g.U(40)), Loc.L("Дараа нь", "Later"), g.Fit(g.sWhite, Loc.L("Дараа нь", "Later"), g.U(120)))) g.Later(Later);
             var tr = new Rect(safe.x, top + g.U(16), safe.width, g.U(64)); var ts = new GUIStyle(g.sBig) { fontSize = Mathf.RoundToInt(g.U(44)), normal = { textColor = new Color(0.17f, 0.12f, 0.18f, 0.6f) } };
             GUI.Label(new Rect(tr.x, tr.y + g.U(3), tr.width, tr.height), Title, ts); ts.normal.textColor = Color.white; GUI.Label(tr, Title, ts);
             GUILayout.BeginArea(new Rect(safe.x + (safe.width - w) / 2, top + g.U(92), w, safe.height - g.U(100)));
@@ -310,7 +310,7 @@ public sealed partial class Game
                         if (GUI.Button(r, "", eth == x.id ? g.sSel : g.sTile)) { var xx = x; g.Later(() => { eth = xx.id; look.hat = xx.hat; look.deel = xx.deel; if (!xx.aimags.Contains(aimag)) aimag = xx.aimags[0]; Sfx.Tap(); }); }
                         var l2 = look.Copy(); l2.hat = x.hat; l2.deel = x.deel;
                         GUI.DrawTexture(new Rect(r.center.x - g.U(14), r.y + g.U(6), g.U(28), g.U(49)), g.Tex(Px.Char(l2, 0, 0)));
-                        GUI.Label(new Rect(r.x + g.U(2), r.y + g.U(56), r.width - g.U(4), g.U(28)), x.name.ToString(), new GUIStyle(g.sLabel) { alignment = TextAnchor.UpperCenter, fontSize = Mathf.RoundToInt(g.U(12)) });
+                        GUI.Label(new Rect(r.x + g.U(2), r.y + g.U(56), r.width - g.U(4), g.U(28)), x.name.ToString(), g.Fit(new GUIStyle(g.sLabel) { alignment = TextAnchor.UpperCenter, fontSize = Mathf.RoundToInt(g.U(12)) }, x.name.ToString(), r.width - g.U(4)));
                     }
                     g.PadRow(i + cols - Mathf.Min(Aimags.ETHNIC.Count, i + cols), 90, 86);
                     GUILayout.EndHorizontal();
@@ -335,7 +335,7 @@ public sealed partial class Game
                         var x = Aimags.ById(allowed[k]); var r = GUILayoutUtility.GetRect(g.U(90), g.U(58), GUILayout.ExpandWidth(true));
                         if (GUI.Button(r, "", aimag == x.id ? g.sSel : g.sTile)) { var id = x.id; g.Later(() => { aimag = id; Sfx.Tap(); }); }
                         GUI.DrawTexture(new Rect(r.center.x - g.U(11), r.y + g.U(6), g.U(22), g.U(22)), g.Tex(Aimags.Icon(x.id)), ScaleMode.ScaleToFit);
-                        GUI.Label(new Rect(r.x + g.U(2), r.y + g.U(32), r.width - g.U(4), g.U(22)), x.name.ToString(), nameSt);
+                        GUI.Label(new Rect(r.x + g.U(2), r.y + g.U(32), r.width - g.U(4), g.U(22)), x.name.ToString(), g.Fit(nameSt, x.name.ToString(), r.width - g.U(4)));
                     }
                     g.PadRow(i + cols - Mathf.Min(allowed.Count, i + cols), 90, 58);
                     GUILayout.EndHorizontal();

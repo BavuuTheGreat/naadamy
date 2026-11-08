@@ -252,6 +252,7 @@ public sealed partial class Game
         }
         void Claim(Game g)
         {
+            if (busy) return; // a double click: claim once
             err = ""; SaveData.EnsureTicket(g.V); busy = true;
             g.StartCoroutine(ArenaApi.Post(Family.ServerOf(g, g.V), ArenaApi.Body("claim", "id", g.V.id, "ticket", g.V.ticket, "username", user.Trim()), r =>
             {
@@ -421,6 +422,7 @@ public sealed partial class Game
         }
         void Act(Game g, string body, string okText, Action after)
         {
+            if (busy) return; // a double click: send once
             busy = true; err = note = "";
             g.StartCoroutine(ArenaApi.Post(Family.ServerOf(g, g.V), body, r =>
             {

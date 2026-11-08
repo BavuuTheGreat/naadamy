@@ -146,6 +146,7 @@ public sealed partial class Game
         }
         void Next(Game g)
         {
+            if (busy) return; // a double click: the second press would check an empty PIN
             string typed = input; input = ""; err = "";
             switch (step)
             {
@@ -326,6 +327,7 @@ public sealed partial class Game
                 GUILayout.BeginArea(new Rect(area.x + (area.width - w0) / 2, area.y + g.U(8), w0, area.height - g.U(16)));
                 GUILayout.BeginHorizontal();
                 if (Back && GUILayout.Button("←", g.sBtn, GUILayout.Width(g.U(48)), GUILayout.Height(g.U(44)))) g.Later(g.Close);
+                if (Back) GUILayout.Space(g.U(10)); // the title doesn't touch the back button
                 GUILayout.Label(Title, new GUIStyle(g.sTitle) { alignment = TextAnchor.MiddleLeft }, GUILayout.Height(g.U(44)));
                 GUILayout.FlexibleSpace(); Header(g);
                 GUILayout.EndHorizontal();
@@ -351,25 +353,33 @@ public sealed partial class Game
             GUI.DrawTexture(new Rect(lr.x + g.U(12), lr.y + g.U(11), g.U(16), g.U(16)), g.Tex(Emo.Icon("🌐")), ScaleMode.ScaleToFit);
             GUI.Label(new Rect(lr.x + g.U(32), lr.y, g.U(32), lr.height), Loc.En ? "МН" : "EN", chip);
             GUILayout.Space(g.U(8));
-            var V = g.V; float nw = Mathf.Min(150, chip.CalcSize(new GUIContent(V.name)).x / g.UiScale + 52);
+            var V = g.V; float nw = Mathf.Min(200, chip.CalcSize(new GUIContent(V.name)).x / g.UiScale + 52); // 200: a 20-letter name fits once Fit shrinks it
             var pr = GUILayoutUtility.GetRect(g.U(nw), g.U(38), GUILayout.Width(g.U(nw)));
             if (GUI.Button(pr, "", g.sWhite)) g.Later(() => g.Open(new MenuModal()));
             g.Box(new Rect(pr.x + g.U(4), pr.y + g.U(4), g.U(30), g.U(30)), Px.Col("#ffe8c4")); GUI.DrawTexture(new Rect(pr.x + g.U(7), pr.y + g.U(7), g.U(24), g.U(24)), g.Tex(Px.Mascot(V.avatar)), ScaleMode.ScaleToFit);
-            GUI.Label(new Rect(pr.x + g.U(40), pr.y, pr.width - g.U(44), pr.height), V.name, new GUIStyle(chip) { fontSize = Mathf.RoundToInt(g.U(14)), normal = { textColor = Px.Col("#141b2d") } });
+            // a long name (up to 20 letters) shrinks to fit the pill, and never runs past it off the screen
+            var nameSt = new GUIStyle(chip) { fontSize = Mathf.RoundToInt(g.U(14)), clipping = TextClipping.Clip, normal = { textColor = Px.Col("#141b2d") } };
+            GUI.Label(new Rect(pr.x + g.U(40), pr.y, pr.width - g.U(44), pr.height), V.name, g.Fit(nameSt, V.name, pr.width - g.U(44)));
             GUILayout.EndHorizontal();
             GUILayout.EndArea();
+            // the tab bar's place, worked out first: a click on it must not also reach the page under it
+            // (IMGUI gives a click to the first control drawn under the mouse, and the page is drawn first)
+            float tw = Mathf.Min(area.width - g.U(24), g.U(560)), th = g.U(64);
+            var nav = new Rect(area.x + (area.width - tw) / 2, area.yMax - g.U(10) - th, tw, th);
+            bool overNav = Event.current.isMouse && nav.Contains(Event.current.mousePosition);
             // the page: up to 1000 wide, with room at the bottom for the tab bar
             float w = Mathf.Min(area.width - g.U(32), g.U(968));
             GUILayout.BeginArea(new Rect(area.x + (area.width - w) / 2, area.y + hb + g.U(18), w, area.height - hb - g.U(18)));
             scroll = g.BeginScroll(scroll);
             if (!Hero) GUILayout.Label(Title, new GUIStyle(g.sTitle) { fontSize = Mathf.RoundToInt(g.U(28)), normal = { textColor = Px.Col("#141b2d") } });
+            bool wasOn = GUI.enabled; if (overNav) GUI.enabled = false; // only for this mouse event: the page still draws as usual
             Body(g);
+            GUI.enabled = wasOn;
             GUILayout.Space(g.U(96));
             g.EndScroll();
             GUILayout.EndArea();
             // the tab bar, floating at the bottom
-            float tw = Mathf.Min(area.width - g.U(24), g.U(560)), th = g.U(64);
-            var nav = new Rect(area.x + (area.width - tw) / 2, area.yMax - g.U(10) - th, tw, th); g.UiAdd(nav);
+            g.UiAdd(nav);
             GUI.Box(nav, "", g.sNav);
             var tabs = new (string id, PxCanvas icon, string name)[] { ("village", Emo.Icon("🌱"), Loc.L("Нутаг", "Nutag")), ("learn", Px.Icon("ui:book"), Loc.L("Сурах", "Learn")), ("basar", Px.BankharFace(0), Loc.L("Басар", "Basar")), ("achievements", Emo.Icon("✨"), Loc.L("Амжилт", "Badges")), ("family", Emo.Icon("👨‍👩‍👧"), Loc.L("Гэр бүл", "Family")) };
             float cw = (tw - g.U(12)) / tabs.Length;
@@ -423,6 +433,8 @@ public sealed partial class Game
             var safe = Screen.safeArea; float top = Screen.height - safe.yMax, w = Mathf.Min(safe.width - g.U(32), g.U(460));
             var er = new Rect(safe.xMax - g.U(16) - g.U(52), top + g.U(16), g.U(52), g.U(38));
             if (GUI.Button(er, Loc.En ? "МН" : "EN", new GUIStyle(g.sWhite) { fontSize = Mathf.RoundToInt(g.U(13)) })) { Loc.En = !Loc.En; g.App.en = Loc.En; g.App.Save(); }
+            // every sound can be turned off before playing too (in the game: the 🔊 button in the HUD's extra buttons, or Settings)
+            g.MuteButton(new Rect(er.x - g.U(46), er.y - g.U(2), g.U(40), g.U(40)));
             GUILayout.BeginArea(new Rect(safe.x + (safe.width - w) / 2, top + g.U(16), w, safe.height - g.U(32)));
             GUILayout.FlexibleSpace();
             var lr = GUILayoutUtility.GetRect(w, g.U(72)); g.Logo(new Rect(lr.center.x - g.U(36), lr.y, g.U(72), g.U(72)));
@@ -464,6 +476,7 @@ public sealed partial class Game
         }
         void Ask(Game g, string body, Action<J> done)
         {
+            if (busy) return; // a double click queues the press twice in one frame: send it once
             busy = true; err = "";
             g.StartCoroutine(ArenaApi.Post(Family.ServerOf(g, null), body, r => { busy = false; if (r["ok"].B) done(r); else { err = Why(r); Sfx.Bad(); } }, "/api/auth"));
         }
@@ -501,7 +514,7 @@ public sealed partial class Game
             void Row(J p)
             {
                 GUILayout.BeginHorizontal(g.sBtn);
-                g.IconAt(Px.Mascot(p["avatar"].I), 40);
+                g.IconAt(Px.Mascot(p["avatar"].I), 40); GUILayout.Space(g.U(8)); // the name doesn't touch the mascot
                 GUILayout.Label($"<b>{p["name"].S}</b>", g.sLabel);
                 GUILayout.FlexibleSpace();
                 if (g.SmallBtn(Loc.L("Тоглох", "Play"))) g.Later(() => Play(g, p));
@@ -563,7 +576,7 @@ public sealed partial class Game
                         int i = r * 4 + c; var rr = GUILayoutUtility.GetRect(g.U(70), g.U(72), GUILayout.ExpandWidth(true));
                         if (GUI.Button(rr, "", i == avatar ? g.sSel : g.sTile)) { avatar = i; Sfx.Pop(); }
                         GUI.DrawTexture(new Rect(rr.center.x - g.U(18), rr.y + g.U(4), g.U(36), g.U(36)), g.Tex(Px.Mascot(i)));
-                        GUI.Label(new Rect(rr.x + g.U(2), rr.y + g.U(40), rr.width - g.U(4), g.U(30)), Profiles.MASCOTS[i].name.ToString(), new GUIStyle(g.sLabel) { alignment = TextAnchor.MiddleCenter, fontSize = Mathf.RoundToInt(g.U(10.5f)) });
+                        GUI.Label(new Rect(rr.x + g.U(2), rr.y + g.U(40), rr.width - g.U(4), g.U(30)), Profiles.MASCOTS[i].name.ToString(), g.Fit(new GUIStyle(g.sLabel) { alignment = TextAnchor.MiddleCenter, fontSize = Mathf.RoundToInt(g.U(10.5f)) }, Profiles.MASCOTS[i].name.ToString(), rr.width - g.U(4)));
                     }
                     GUILayout.EndHorizontal();
                 }
@@ -580,7 +593,7 @@ public sealed partial class Game
             void Start(SaveData p, bool account)
             {
                 p.server = server.Trim(); if (account) p.email = email.Trim(); p.Save();
-                g.App.profiles.Add(p.id); g.App.server = server.Trim(); g.App.Save();
+                if (!g.App.profiles.Contains(p.id)) g.App.profiles.Add(p.id); g.App.server = server.Trim(); g.App.Save();
                 g.Enter(p);
             }
             if (adding)
@@ -609,6 +622,7 @@ public sealed partial class Game
         public override bool CanEscape => !must;
         void Ask(Game g, string body, Action<J> done)
         {
+            if (busy) return; // a double click queues the press twice in one frame: send it once
             busy = true; err = "";
             g.StartCoroutine(ArenaApi.Post(Family.ServerOf(g, g.V), body, r => { busy = false; if (r["ok"].B) done(r); else { err = AuthPage.Why(r); Sfx.Bad(); } }, "/api/auth"));
         }
