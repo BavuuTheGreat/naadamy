@@ -16,7 +16,7 @@ using System.Runtime.InteropServices;
 
 public sealed class Net
 {
-    public const int VERSION = 13;
+    public const int VERSION = 14;
     public static readonly Tx[] PHRASES =
     {
         new Tx("Сайн уу!", "Hi!"), new Tx("Хамт тоглоё!", "Let's play!"), new Tx("Баярлалаа!", "Thank you!"), new Tx("Энд ир!", "Come here!"),

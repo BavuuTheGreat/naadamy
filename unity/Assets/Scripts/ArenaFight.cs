@@ -399,7 +399,7 @@ public sealed partial class Game
             g.Box(new Rect(W / 2 - clockW / 2, topY - U * 6, clockW, U * 50), Px.Col("#1a1218"));
             GUI.Label(new Rect(W / 2 - clockW / 2, topY - U * 6, clockW, U * 38), secs.ToString(), new GUIStyle(g.sBig) { alignment = TextAnchor.MiddleCenter, fontSize = Mathf.RoundToInt(U * 30), normal = { textColor = secs <= 10 && (int)(now * 2) % 2 == 0 ? Px.Col("#ff6a3c") : Px.Col("#f7c646") } });
             GUI.Label(new Rect(W / 2 - clockW / 2, topY + U * 28, clockW, U * 16), Loc.L($"{cur.rd}-р даваа", $"Round {cur.rd}"), new GUIStyle(g.sSmall) { alignment = TextAnchor.MiddleCenter, fontSize = g.Ts(9), normal = { textColor = Color.white } });
-            string modeT = mode == "ranked" ? Loc.L("Чансааны барилдаан", "Ranked bout") : mode == "friend" ? Loc.L("Найзын барилдаан", "Friendly bout") : Loc.L("Компьютертэй дасгал", "Sparring");
+            string modeT = mode == "ranked" ? Loc.L("Чансааны барилдаан", "Ranked bout") : Loc.L("Компьютертэй дасгал", "Sparring");
             GUI.Label(new Rect(0, topY + U * 46, W, U * 16), modeT, new GUIStyle(g.sSmall) { alignment = TextAnchor.MiddleCenter, fontSize = g.Ts(9), normal = { textColor = new Color(1, 1, 1, 0.75f) } });
             // in the clinch: who holds the grip, and what the other one can do
             if (cur.c >= 0 && cur.ph == "fight")
@@ -474,7 +474,6 @@ public sealed partial class Game
             if (g.Btn(again, true, 44)) g.Later(() =>
             {
                 if (mode == "cpu") g.net.Send("{\"t\":\"ar-cpu\",\"lv\":" + Mathf.Clamp(cpu, 1, 3) + "}");
-                else if (mode == "friend") g.ArenaSend("ar-challenge", "u", names[1 - side]);
                 else g.net.Send("{\"t\":\"ar-queue\"}");
                 if (mode != "cpu") g.Swap(new ArenaHubModal());
             });

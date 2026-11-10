@@ -6,7 +6,7 @@
   else { root.TG = root.TG || {}; root.TG.vrules = api; }
 })(typeof self !== 'undefined' ? self : this, function () {
   const W = 56, H = 40, LOTS = 8;
-  const VERSION = 13; // bump when the game and server must change together (moves, messages), so an old running server is noticed
+  const VERSION = 14; // bump when the game and server must change together (moves, messages), so an old running server is noticed
   const T = (mn, en) => ({ mn, en });
 
   // The herding and dairy yard (хот айл): animals you milk, and the white foods (цагаан идээ) you make from the milk.
