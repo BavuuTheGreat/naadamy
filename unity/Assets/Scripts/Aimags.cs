@@ -57,14 +57,11 @@ public static class Aimags
 
 public sealed partial class Game
 {
-    // ================================================================ the passport: stamps in route order, the first two provinces free
-    public const int PASS_FREE = 2, PASS_PRICE = 9900;
+    // ================================================================ the passport: stamps in route order, every province free
     public int StampCount() => V.stamps.Count;
     public bool Stamped(string id) => V.stamps.Exists(s => s.k == id);
     public string NextAimag() => Aimags.ORDER.FirstOrDefault(id => !Stamped(id));
     bool AimagUnlocked(string id) => Stamped(id) || id == NextAimag();
-    /** A province beyond the free ones, not stamped before, and no travel pass yet. */
-    public bool PassLocked(string id) { if (V.aimagPass > 0) return false; int i = Aimags.ORDER.IndexOf(id); if (i < PASS_FREE) return false; return !Stamped(id); }
     /** Give the province's stamp (from the travel map's guide). */
     public void Stamp(string id)
     {
@@ -72,114 +69,7 @@ public sealed partial class Game
         V.stamps.Add(new KV { k = id, v = SaveData.NowMs() }); V.Save(); Sfx.Win();
         Reward(25, 35); App.LogActivity("stamp", id, V.id); Quest("stamp"); CheckAchievements();
     }
-    /** Run go() if the province is open, otherwise show the travel pass (and run go() after a purchase). */
-    public void PassGuard(string id, Action go) { if (PassLocked(id)) Open(new PassModal(id, go)); else go(); }
-    static string Fmt(int n) => n.ToString("#,0", System.Globalization.CultureInfo.InvariantCulture) + "₮";
 
-    /** The travel pass: Bolormaa stands beside it and explains, the road barrier is down in front of the province, and a
-     *  card shows the price and what the pass opens. A grown-up unlocks it behind the parent check. */
-    sealed class PassModal : Modal
-    {
-        readonly string id; readonly Action after; string say; bool done, later;
-        public PassModal(string id, Action after)
-        {
-            this.id = id; this.after = after;
-            var g = I; say = Loc.L($"Хөөе, {g.V.name}! Чи аль хэдийн {g.StampCount()} аймгаар аялчихлаа, ямар гоё вэ! Цааш хамт аялахын тулд Аймгийн аяллын эрх хэрэгтэй юм. Ээж, аавдаа үзүүлээд асуучих уу?",
-                $"Hey {g.V.name}! You’ve already explored {g.StampCount()} provinces, how wonderful! To keep travelling together we need the Aimag Travel Pass. Shall we show a grown-up?");
-        }
-        public override float Width => 560;
-        public override (string who, string face)? Speaker => ("bolormaa", done ? "laugh" : "happy");
-        readonly Live land = new Live(160, 70);
-        public override void Draw(Game g)
-        {
-            var a = Aimags.ById(id);
-            GUILayout.Label(Loc.L($"Аймгийн паспорт · {g.StampCount()}/{Aimags.ORDER.Count} тамга", $"Aimag passport · {g.StampCount()}/{Aimags.ORDER.Count} stamps"), g.sKicker);
-            g.Title(a != null ? Loc.L($"{a.name.mn} руу явах уу?", $"Off to {a.name.en}?") : Loc.L("Цааш аялах уу?", "Travel further?"));
-            Aimags.DrawLand(land.c, id, Time.time, 160, 70);
-            if (!done) { Px.R(land.c, 10, 54, 140, 5, "#2b1e2e"); for (int i = 0; i < 14; i++) Px.R(land.c, 11 + i * 10, 55, 9, 3, i % 2 != 0 ? "#ffffff" : "#e14b3d"); } // the road barrier, gone once the pass is bought
-            land.Show(g, 120);
-            g.Gap(6);
-            GUILayout.Label(say, g.sLabel);
-            g.Gap(6);
-            if (done)
-            {
-                if (g.Btn(a != null ? Loc.L($"{a.name.mn} руу аялах", $"Travel to {a.name.en}") : Loc.L("Аялах", "Travel"), true, 48)) g.Later(() => { g.Close(); after?.Invoke(); });
-                return;
-            }
-            // the offer: what it is and what it costs, then what it opens
-            GUILayout.BeginVertical(g.sPanel);
-            GUILayout.BeginHorizontal();
-            g.IconAt(Px.Icon("ui:scroll"), 40); g.Gap(8);
-            GUILayout.BeginVertical();
-            GUILayout.Label("<b>" + Loc.L("Аймгийн аяллын эрх", "Aimag Travel Pass") + "</b>", g.sLabel);
-            GUILayout.Label(Loc.L("Нэг удаа төлнө · сарын төлбөргүй", "One-time payment · no subscription"), g.sSmall);
-            GUILayout.EndVertical();
-            GUILayout.FlexibleSpace();
-            GUILayout.Label(Fmt(PASS_PRICE), new GUIStyle(g.sTitle) { alignment = TextAnchor.MiddleRight, wordWrap = false }, GUILayout.ExpandWidth(false));
-            GUILayout.EndHorizontal();
-            g.Gap(4);
-            int left = Aimags.ORDER.Count - PASS_FREE;
-            foreach (var (icon, line) in new[]
-            {
-                ("ui:ovoo", Loc.L($"Үлдсэн {left} аймаг бүгд нээгдэнэ", $"All {left} remaining provinces open")),
-                ("ui:horse", Loc.L("Аймаг бүрээр 3D-ээр аялна", "Travel every province in 3D")),
-                ("ui:coin", Loc.L("Тамга бүрт зоос, XP", "Coins and XP for every stamp")),
-                ("ui:star", Loc.L("Нэг эрх = хөдөөгийн нэг хүүхдэд үнэгүй эрх", "Each pass gives a free pass to a rural child")),
-            })
-            {
-                GUILayout.BeginHorizontal(); g.IconAt(Px.Icon(icon), 20); g.Gap(6); GUILayout.Label(line, g.sSmall); GUILayout.EndHorizontal();
-            }
-            GUILayout.EndVertical();
-            g.Gap(6);
-            if (g.Btn(Loc.L("Том хүнээс зөвшөөрөл авах", "Ask a grown-up to unlock"), true, 48, !later)) g.Later(() => g.Open(new ParentGate(() => g.Open(new PayModal(this)))));
-            if (g.Btn(Loc.L("Дараа", "Maybe later"), false, 36, !later)) g.Later(() => { later = true; say = Loc.L("Зүгээр ээ! Бэлэн болохоор хамт аялцгаая. Тэр хооронд Нутагтаа тоглоод байя.", "That’s okay! We’ll travel together whenever you’re ready. Let’s play in Nutag for now."); g.StartCoroutine(CloseSoon(g)); });
-            GUILayout.Label(Loc.L("Төлөхөөс өмнө том хүн эцэг эхийн шалгалтаар баталгаажуулна.", "A grown-up confirms with the parent check before anything is paid."), new GUIStyle(g.sKicker) { alignment = TextAnchor.MiddleCenter });
-        }
-        System.Collections.IEnumerator CloseSoon(Game g) { yield return new WaitForSeconds(1.5f); if (g.modal == this) g.Close(); }
-        /** Payment goes through here. A real payment provider plugs in as Game.Charge; without one the purchase is recorded on this device after the parental gate. */
-        public void Paid(Game g)
-        {
-            g.V.aimagPass = SaveData.NowMs(); g.V.Save(); g.App.LogActivity("pass", "aimag", g.V.id);
-            done = true; g.Confetti(80); Sfx.Win();
-            say = Loc.L("Ура, баярлалаа! Одоо бүх Монголоор хамт аялна. Явцгаая!", "Hooray, thank you! Now we can travel all of Mongolia together. Let’s go!");
-        }
-    }
-    /** The grown-up's checkout: what is bought, for whom, the total, then pay or cancel. */
-    sealed class PayModal : Modal
-    {
-        readonly PassModal pass; public PayModal(PassModal pass) { this.pass = pass; }
-        public override float Width => 480;
-        public override void Draw(Game g)
-        {
-            GUILayout.Label(Loc.L("Том хүнд", "For the grown-up"), g.sKicker);
-            g.Title(Loc.L("Төлбөр", "Checkout"));
-            GUILayout.BeginVertical(g.sPanel);
-            GUILayout.BeginHorizontal();
-            g.IconAt(Px.Icon("ui:scroll"), 36); g.Gap(8);
-            GUILayout.BeginVertical();
-            GUILayout.Label("<b>" + Loc.L("Аймгийн аяллын эрх", "Aimag Travel Pass") + "</b>", g.sLabel);
-            GUILayout.Label(Loc.L($"{g.V.name}-д · бүх аймаг · нэг удаа", $"For {g.V.name} · every province · one-time"), g.sSmall);
-            GUILayout.EndVertical();
-            GUILayout.FlexibleSpace();
-            GUILayout.Label(Fmt(PASS_PRICE), new GUIStyle(g.sLabel) { alignment = TextAnchor.MiddleRight, wordWrap = false }, GUILayout.ExpandWidth(false));
-            GUILayout.EndHorizontal();
-            g.Gap(6); var line = GUILayoutUtility.GetRect(10, g.U(1), GUILayout.ExpandWidth(true)); g.Box(line, new Color(0, 0, 0, 0.15f)); g.Gap(6);
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("<b>" + Loc.L("Нийт", "Total") + "</b>", g.sLabel);
-            GUILayout.FlexibleSpace();
-            GUILayout.Label(Fmt(PASS_PRICE), new GUIStyle(g.sTitle) { alignment = TextAnchor.MiddleRight, wordWrap = false }, GUILayout.ExpandWidth(false));
-            GUILayout.EndHorizontal();
-            GUILayout.EndVertical();
-            g.Gap(4);
-            GUILayout.BeginHorizontal(); g.IconAt(Px.Icon("ui:lock"), 16); g.Gap(4);
-            GUILayout.Label(Loc.L("Нэг удаагийн төлбөр. Дахин төлбөр авахгүй.", "One-time payment. Nothing is charged again."), g.sKicker); GUILayout.EndHorizontal();
-            g.Gap(6);
-            if (g.Btn(Loc.L($"{Fmt(PASS_PRICE)} төлөх", $"Pay {Fmt(PASS_PRICE)}"), true, 48)) g.Later(() => { g.Close(); if (Charge == null || Charge()) pass.Paid(g); else g.Toast(Loc.L("Төлбөр амжилтгүй боллоо. Дахин оролдоорой.", "The payment did not go through. Please try again.")); });
-            if (g.Btn(Loc.L("Болих", "Cancel"), false, 36)) g.Later(g.Close);
-        }
-    }
-    /** A real payment provider (QPay, card, store billing) can be plugged in here; it returns true when the payment went through. */
-    public static Func<bool> Charge;
 
     sealed class PassportPage : Page
     {
@@ -193,7 +83,7 @@ public sealed partial class Game
             GUILayout.BeginVertical();
             GUILayout.Label($"<b>{g.StampCount()} / {order.Count}</b>", g.sBig);
             g.Small(Loc.L("Улаанбаатараас эхлээд Монголын 21 аймгаар аялаарай. Аймаг бүрийн байгаль, алдартай газрууд, түүхтэй танилцаад тамга авбал дараагийн аймаг нээгдэнэ.", "Start in Ulaanbaatar and travel through all 21 provinces. Discover each one’s nature, landmarks and history, earn its stamp and the next one opens."));
-            if (nx != null) { if (g.Btn(Loc.L("Дараагийн аялал: ", "Next trip: ") + Aimags.ById(nx).name, true, 40)) g.Later(() => g.PassGuard(nx, () => g.Open(new AimagPage(nx)))); }
+            if (nx != null) { if (g.Btn(Loc.L("Дараагийн аялал: ", "Next trip: ") + Aimags.ById(nx).name, true, 40)) g.Later(() => g.Open(new AimagPage(nx))); }
             else g.Text("<b>" + Loc.L("Та Монголоор бүрэн аялсан!", "You have travelled all of Mongolia!") + "</b>");
             GUILayout.EndVertical(); GUILayout.EndHorizontal();
             int cols = g.GridCols(order.Select(id => "<b>" + Aimags.ById(id).name + "</b>"), new GUIStyle(g.sLabel) { wordWrap = false, fontSize = g.Ts(11) }, 16, 7);
@@ -202,17 +92,17 @@ public sealed partial class Game
                 GUILayout.BeginHorizontal();
                 for (int k = i; k < Mathf.Min(order.Count, i + cols); k++)
                 {
-                    string id = order[k]; var a = Aimags.ById(id); bool got = g.Stamped(id), open = g.AimagUnlocked(id), home = g.V.aimag == id, paid = !g.PassLocked(id);
+                    string id = order[k]; var a = Aimags.ById(id); bool got = g.Stamped(id), open = g.AimagUnlocked(id), home = g.V.aimag == id;
                     var r = GUILayoutUtility.GetRect(g.U(110), g.U(96), GUILayout.ExpandWidth(true));
                     bool was = GUI.enabled; GUI.enabled = open;
-                    if (GUI.Button(r, "", got ? g.sPrimary : g.sBtn)) { var id2 = id; g.Later(() => g.PassGuard(id2, () => g.Open(new AimagPage(id2)))); }
+                    if (GUI.Button(r, "", got ? g.sPrimary : g.sBtn)) { var id2 = id; g.Later(() => g.Open(new AimagPage(id2))); }
                     GUI.enabled = was;
                     var old = GUI.color; if (!open) GUI.color = new Color(1, 1, 1, 0.45f);
                     GUI.Label(new Rect(r.x + g.U(6), r.y + g.U(4), g.U(30), g.U(18)), (k + 1).ToString(), g.sSmall);
                     GUI.DrawTexture(new Rect(r.center.x - g.U(16), r.y + g.U(10), g.U(32), g.U(32)), g.Tex(Aimags.Icon(id)));
                     var st = new GUIStyle(got ? g.sPrimary.Clean() : g.sLabel) { alignment = TextAnchor.MiddleCenter, wordWrap = false, fontSize = g.Ts(11) };
                     GUI.Label(new Rect(r.x, r.y + g.U(44), r.width, g.U(20)), "<b>" + a.name + "</b>", st);
-                    string sub = got ? DateTimeOffset.FromUnixTimeMilliseconds(g.V.stamps.Find(s => s.k == id).v).LocalDateTime.ToString("yyyy.MM.dd") : open ? Loc.L("Аялах →", "Visit →") : !paid && k == PASS_FREE ? Fmt(PASS_PRICE) : "";
+                    string sub = got ? DateTimeOffset.FromUnixTimeMilliseconds(g.V.stamps.Find(s => s.k == id).v).LocalDateTime.ToString("yyyy.MM.dd") : open ? Loc.L("Аялах →", "Visit →") : "";
                     GUI.Label(new Rect(r.x + g.U(2), r.y + g.U(61), r.width - g.U(4), g.U(32)), sub + (home ? " · " + Loc.L("Миний нутаг", "Home") : ""), new GUIStyle(st) { fontSize = g.Ts(9), wordWrap = true }); // a stamped home province wraps to two lines
                     GUI.color = old;
                 }

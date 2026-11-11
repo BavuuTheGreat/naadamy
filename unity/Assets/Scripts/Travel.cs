@@ -53,7 +53,6 @@ public sealed partial class Game
 
     public void OpenTrip(string id, string view)
     {
-        if (PassLocked(id)) { PassGuard(id, () => OpenTrip(id, view)); return; }
         V.travelView = view; V.Save();
         if (view == "fp" && TryFirstPerson(id)) return;
         Open(new TripScene(this, id));

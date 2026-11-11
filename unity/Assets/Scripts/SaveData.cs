@@ -78,7 +78,7 @@ public sealed class SaveData
     public List<KV> stamps = new List<KV>();        // province id → when it was stamped (unix ms)
     public List<string> seenMarks = new List<string>(); // "province:landmark" visited on a trip
     public List<string> travelFam = new List<string>(); // provinces whose herder family you visited
-    public long aimagPass;                              // when the travel pass was bought (0: not yet)
+    public long aimagPass;                              // unused (the travel pass was removed); kept so old saves still load
     public string travelView = "2d";
     public List<KV> ach = new List<KV>();             // achievement id → when it was earned
     public List<KV> bichig = new List<KV>();          // Mongol script: letter/word id → best score

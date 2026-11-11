@@ -465,7 +465,6 @@ public sealed partial class Game
                 case "hand": { var a = GerRules.HANDS_ON.Find(q => q.id == x.id); return a != null ? a.name.ToString() : x.id; }
                 case "race": return Loc.L($"Морин уралдаанд {x.id}-р байр", $"Horse race: place {x.id}");
                 case "stamp": { var a = Aimags.ById(x.id); return Loc.L("Тамга: ", "Stamp: ") + (a != null ? a.name.ToString() : x.id); }
-                case "pass": return Loc.L("Аймгийн аяллын эрх авсан", "Got the Aimag Travel Pass");
                 case "together": { var p = x.id.Split('|'); var l = Lessons.ALL.FirstOrDefault(q => q["id"].S == p[0]); return (l != null ? l["title"].T.ToString() : Loc.L("Асуулт хариулт", "Quiz")) + (p.Length > 2 ? " · " + p[2] : ""); }
             }
             return x.k;
@@ -758,9 +757,8 @@ public sealed partial class Game
                 ("🔒", "", Loc.L("Профайл зөвхөн таны төхөөрөмж дээр, AI-д нэр хадгалагдахгүй", "Profiles stay on your device; the AI keeps no names")),
                 ("🧒", "", Loc.L("Хүүхдэд аюулгүй AI: хувийн мэдээлэл асуудаггүй", "Kid-safe AI: never asks for personal details")) });
             GUILayout.BeginVertical(g.sPanel);
-            GUILayout.Label("<b>" + Loc.L("Шударга үнэ", "Fair pricing") + "</b>", g.sTitle);
+            GUILayout.Label("<b>" + Loc.L("Бүгд үнэгүй", "Free for everyone") + "</b>", g.sTitle);
             Price(g, Loc.L("Үнэгүй", "Free"), "0₮" + Loc.L(" / үүрд", " / forever"), new[] { Loc.L("Нутаг, бүх хичээл", "Nutag and every lesson"), Loc.L("Басарын офлайн мэдлэг", "Basar’s offline knowledge"), Loc.L("Дурсамжийн ном", "Memory book") }, null);
-            Price(g, Loc.L("Гэр бүл", "Family"), "3,900₮" + Loc.L(" / сар", " / month"), new[] { Loc.L("Басар AI ухаалаг горим", "Basar smart AI mode"), Loc.L("Сар бүр шинэ өв соёлын хичээл", "New heritage lessons every month"), Loc.L("Хэвлэх гэр бүлийн картууд", "Printable family activity cards") }, Loc.L("Нэг гэр бүлийн төлбөр = хөдөөгийн нэг хүүхдэд үнэгүй эрх", "One family plan = free access for one rural child"));
             Price(g, Loc.L("Сургууль, сум", "Schools & soums"), "0₮" + Loc.L(" / үнэгүй", " / free"), new[] { Loc.L("Төрийн сургууль, цэцэрлэг", "Public schools & kindergartens"), Loc.L("Багшийн самбар", "Teacher dashboard"), Loc.L("Ангиараа Нутагт хамт тоглох", "Whole class plays together in Nutag") }, null);
             GUILayout.EndVertical();
             GUILayout.BeginVertical(g.sPanel);
