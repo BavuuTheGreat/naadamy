@@ -55,12 +55,15 @@ public static class Family
     }
     /** The hosted Naadamy server (Render), built into the app so nobody has to type an address. Empty until it is deployed:
      *  then set it, e.g. "https://naadamy-team8.onrender.com". An address in Settings still wins (a server on the home Wi-Fi). */
-    public const string HOSTED = "https://pinequest-s5-episode-2-team-8.onrender.com";
+    public const string HOSTED = "https://naadamy-server.onrender.com";
+    /** Earlier hosted servers that are gone. A profile or device that saved one of these goes to HOSTED instead. */
+    static readonly string[] RETIRED = { "pinequest-s5-episode-2-team-8.onrender.com", "naadamy-team8.onrender.com" };
+    static string Live(string address) => RETIRED.Any(r => address.Contains(r)) ? HOSTED : address;
     /** Where this profile reaches the server: its own address, the one this device last used, or the hosted one. "": play alone. */
     public static string ServerOf(Game g, SaveData p)
     {
-        if (p != null && IsAddress(p.server)) return p.server; // a code typed into the box by mistake ("m8qhg") is no address: skip it
-        return IsAddress(g.App.server) ? g.App.server : PageServer() ?? HOSTED;
+        if (p != null && IsAddress(p.server)) return Live(p.server); // a code typed into the box by mistake ("m8qhg") is no address: skip it
+        return IsAddress(g.App.server) ? Live(g.App.server) : PageServer() ?? HOSTED;
     }
     /** A browser build served by a Naadamy server on this computer or the home Wi-Fi (localhost, 127.x, 192.168.x, 10.x)
      *  talks to that same server. Anywhere else (Vercel) it is null and the hosted one is used. */
