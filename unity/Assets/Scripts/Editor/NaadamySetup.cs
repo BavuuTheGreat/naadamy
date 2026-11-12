@@ -79,7 +79,6 @@ public static class NaadamySetup
         var i = Array.IndexOf(args, "-customBuildPath");
         return i >= 0 && i + 1 < args.Length ? args[i + 1] : null;
     }
-    }
 
     static void Build(BuildTarget target, string path)
     {
