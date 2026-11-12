@@ -85,6 +85,7 @@ public static class NaadamySetup
         if (!File.Exists(SCENE)) Setup();
         var report = BuildPipeline.BuildPlayer(new BuildPlayerOptions { scenes = new[] { SCENE }, locationPathName = path, target = target });
         Debug.Log($"Naadamy build {target}: {report.summary.result} → {path}");
+        if (report.summary.result == UnityEditor.Build.Reporting.BuildResult.Succeeded) Debug.LogFormat(LogType.Log, LogOption.NoStacktrace, null, "Build succeeded!"); // game-ci checks the log for exactly this line
         if (Application.isBatchMode && report.summary.result != UnityEditor.Build.Reporting.BuildResult.Succeeded) EditorApplication.Exit(1); // a failed terminal build must not look like a success
     }
 }
