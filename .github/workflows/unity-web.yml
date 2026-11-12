@@ -57,6 +57,7 @@ jobs:
       - name: Move the build to unity/Builds/WebGL
         run: |
           sudo chown -R "$USER" build
+          sudo chown -R "$USER" "$HOME/.local" "$HOME/.cache" || true
           out=$(dirname "$(find build -name index.html | head -1)")
           test -f "$out/index.html"
           mkdir -p unity/Builds
