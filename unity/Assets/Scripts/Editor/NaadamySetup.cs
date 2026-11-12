@@ -1,5 +1,6 @@
 // First-open setup for the Unity project: makes the scene, adds it to the build, sets the app name and landscape screen.
 // The game itself needs nothing in the scene: Game.cs starts itself (RuntimeInitializeOnLoadMethod) and draws everything in code.
+using System;
 using System.IO;
 using UnityEditor;
 using UnityEditor.Build;
@@ -68,7 +69,16 @@ public static class NaadamySetup
         PlayerSettings.SplashScreen.show = false;                      // straight into the game after the page's own loading bar
         PlayerSettings.WebGL.debugSymbolMode = WebGLDebugSymbolMode.Off; // no symbol files or function names shipped with the game
         EditorUserBuildSettings.development = false;                   // a release build: no profiler hooks, no development console
-        Build(BuildTarget.WebGL, "Builds/WebGL");
+        Build(BuildTarget.WebGL, CustomBuildPath() ?? "Builds/WebGL");
+    }
+
+    /** game-ci passes -customBuildPath and then checks that the build landed there; from the menu there is none. */
+    static string CustomBuildPath()
+    {
+        var args = Environment.GetCommandLineArgs();
+        var i = Array.IndexOf(args, "-customBuildPath");
+        return i >= 0 && i + 1 < args.Length ? args[i + 1] : null;
+    }
     }
 
     static void Build(BuildTarget target, string path)
