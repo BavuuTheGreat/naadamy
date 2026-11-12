@@ -25,7 +25,7 @@ const PLAYER_TICKET = /^[a-f0-9]{64}$/i;
 const KEY = /^[a-f0-9]{64}$/;
 const PENDING_MS = 10 * 60 * 1000, PENDING_MAX = 2000, PER_MINUTE = 20;
 const CODE_LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-const RENDER_URL = 'https://pinequest-s5-episode-2-team-8.onrender.com';
+const RENDER_URL = 'https://naadamy-server.onrender.com';
 
 const b64url = (buffer) => buffer.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const shortCode = () => Array.from(crypto.randomBytes(4), (b) => CODE_LETTERS[b % CODE_LETTERS.length]).join('');

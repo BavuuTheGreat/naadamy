@@ -16,7 +16,7 @@ const TRIES = 3; // …at most this many times in a row; then it waits for next 
 const SENDS_PER_DAY = 3, PER_IP = 5, ALL = 200;
 const TOKEN = /^[a-f0-9]{64}$/;
 const EMAIL = /^[^\s@<>()[\]\\,;:"]{1,64}@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
-const RENDER_URL = 'https://pinequest-s5-episode-2-team-8.onrender.com';
+const RENDER_URL = 'https://naadamy-server.onrender.com';
 // lesson ids of the cloud save (cleanCloud `learn`) the report can name; any other id is shown as it is
 const LESSONS = { ger: ['Монгол гэр', 'The Mongol ger'], idee: ['Цагаан идээ', 'Dairy foods'], customs: ['Ёс заншил', 'Customs'],
   nuuts: ['Нууц товчоо', 'The Secret History'], history: ['Түүх', 'History'], naadam: ['Наадам', 'Naadam'], nomad: ['Нүүдэлчин ахуй', 'Nomad life'],
