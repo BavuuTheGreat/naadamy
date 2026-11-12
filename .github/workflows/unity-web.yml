@@ -45,7 +45,6 @@ jobs:
       - name: Build WebGL (Naadamy → Build WebGL, output unity/Builds/WebGL)
         uses: game-ci/unity-builder@v6
         env:
-          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
         with:
@@ -54,6 +53,16 @@ jobs:
           buildMethod: NaadamySetup.BuildWebGL
           versioning: None
 
+      # game-ci builds into build/WebGL/WebGL (as root, inside Docker); Vercel publishes from unity/Builds/WebGL.
+      - name: Move the build to unity/Builds/WebGL
+        run: |
+          sudo chown -R "$USER" build
+          out=$(dirname "$(find build -name index.html | head -1)")
+          test -f "$out/index.html"
+          mkdir -p unity/Builds
+          rm -rf unity/Builds/WebGL
+          mv "$out" unity/Builds/WebGL
+          ls -la unity/Builds/WebGL
       - uses: actions/setup-node@v4
         with:
           node-version: 20
