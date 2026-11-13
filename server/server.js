@@ -67,7 +67,9 @@ const voice = require('./voice.js')(roomStore, { dataDir: DATA_DIR, checkPin: (m
 // the online arena: wrestler accounts with unique usernames, friends, rated bouts (arena.js, accounts.js, arena-store.js)
 const arenaStore = require('./arena-store.js').createArenaStore({ dataDir: DATA_DIR, pool: roomStore.pool || null });
 const arena = require('./arena.js')(arenaStore, { level: (xp) => walletLevel({ xp }), reward: (id, operation, coins, xp) => payPlayer(id, operation, coins, xp),
-  tickMs: Number(process.env.ARENA_TICK_MS) || undefined }); // ARENA_TICK_MS: only tests run bouts faster than 30 ticks a second
+  // ARENA_ROUND_MS (a round's time to choose) and ARENA_CPU_MS (the CPU's thinking): only tests make them shorter
+  ...(Number(process.env.ARENA_ROUND_MS) ? { roundMs: Number(process.env.ARENA_ROUND_MS) } : {}),
+  ...(Number(process.env.ARENA_CPU_MS) ? { cpuMs: [Number(process.env.ARENA_CPU_MS), Number(process.env.ARENA_CPU_MS)] } : {}) });
 const accounts = require('./accounts.js')(roomStore, arenaStore, { cloudOf: (id) => getCloudSave(id), onChange: (id) => arena.changed(id), onDelete: (id) => arena.gone([id]) });
 // player numbers for the owners at /admin (admin-stats.js); off unless ADMIN_KEY is set
 // sign in with Google on any device (google-auth.js); off unless GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are set
@@ -1065,14 +1067,9 @@ async function persistLotAction(conn, action, message) {
 
 function onMessage(conn, text) {
   const t = Date.now();
-  // a bout's inputs (`ar-in`, small) have their own allowance: 60 a second; everything else ~20 a second
-  if (text.length <= 64 && text.startsWith('{"t":"ar-in"')) {
-    conn.inTokens = Math.min(60, (conn.inTokens ?? 60) + ((t - (conn.inLast || t)) / 1000) * 60); conn.inLast = t;
-    if ((conn.inTokens -= 1) < 0) return;
-  } else {
-    conn.tokens = Math.min(30, conn.tokens + ((t - conn.last) / 1000) * 20); conn.last = t;
-    if ((conn.tokens -= 1) < 0) return;
-  }
+  // ~20 messages a second
+  conn.tokens = Math.min(30, conn.tokens + ((t - conn.last) / 1000) * 20); conn.last = t;
+  if ((conn.tokens -= 1) < 0) return;
   let m; try { m = JSON.parse(text); } catch { return; }
   if (!m || typeof m.t !== 'string') return;
 

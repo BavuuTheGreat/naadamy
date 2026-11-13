@@ -1,5 +1,7 @@
 // Бөх: Mongolian wrestling at the Naadam arena. The herald calls both names, you do the eagle dance, then each move is
-// done with its own skill (timing, footwork, power, grip, balance). 9 rounds, titles from Nachin to Avarga.
+// done with its own skill (timing, footwork, power, grip, balance). 9 rounds, titles from Nachin to Avarga. The same bout
+// is played live with a friend in the village room (wr-*) and in the online arena (ar-*, Arena.cs), where the server
+// weighs both moves.
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -134,6 +136,12 @@ public sealed partial class Game
         readonly Rules.Title oppT;
         // live bout with a friend: the dance and the skill games are played here, the server picks the round's winner
         readonly string matchId, side; bool pvp => matchId != null; bool oppReady, cut, noBout;
+        // a bout in the online arena (server/arena.js): the server's clock for each round, what the bout paid, and the room with a friend
+        bool ar, roomOpen = true, askedAgain, oppAgain, lateMe, lost, rated; string arMode = "ranked", arReason = ""; int arLv, arCoins, arXp, rBefore, rAfter;
+        float deadlineAt = -1, backCheckAt = -1;
+        /** A new bout took this one's place, so closing it must not close the room. */
+        public bool Replaced;
+        public string ArId => ar ? matchId : null;
         readonly Live live = new Live(400, 180);   // the stadium, full screen (wide, so a widescreen shows the whole field)
         Vector2 panelScroll;
         public override bool FullScreen => true;
@@ -167,8 +175,90 @@ public sealed partial class Game
         /** A live bout with a friend in the room, after the server's wr-start. `side` is "a" (the one who invited) or "b". */
         public static WrestleModal Pvp(Game g, string matchId, string side, string oppName, Look oppLook) =>
             new WrestleModal(g, 3, oppName, 0, oppLook != null && Rules.SKINS.Contains(oppLook.skin) ? oppLook.skin : Rules.SKINS[0], false, matchId, side, oppLook?.title);
+        /** A bout in the online arena, after the server's ar-start. */
+        public static WrestleModal Arena(Game g, J m)
+        {
+            var opp = m["opp"]; var look = ArenaLook(opp["look"]); int lv = opp["cpu"].I; string tier = opp["tier"].S;
+            string skin = look != null && Rules.SKINS.Contains(look.skin) ? look.skin : Rules.SKINS[Mathf.Clamp(lv * 2, 0, Rules.SKINS.Length - 1)];
+            var w = new WrestleModal(g, 3, lv > 0 ? CpuName(lv) : Clean(opp["u"].S), 0, skin, false, m["id"].S, m["side"].I == 1 ? "b" : "a", tier != "novice" ? tier : null)
+                { ar = true, arMode = m["mode"].S ?? "ranked", arLv = lv };
+            w.OnStart(m);
+            return w;
+        }
+        public static string CpuName(int lv) => lv == 1 ? Loc.L("Багш", "Coach") : lv == 2 ? Loc.L("Начин", "Falcon") : Loc.L("Аварга", "Titan");
         public override float Width => 560;
         public override bool CanEscape => !pvp;   // leaving a live bout is giving up: only the buttons do it
+
+        // ---------------------------------------------------------------- the online arena
+        int Me => side == "b" ? 1 : 0;
+        void Clock(J m) { deadlineAt = m.Has("ms") ? Time.realtimeSinceStartup + m["ms"].I / 1000f : -1; }
+        /** ar-start: a new bout, or this one again after a dropped connection (then the falls so far, and whether my move is in). */
+        public void OnStart(J m)
+        {
+            Clock(m); lost = false; backCheckAt = -1;
+            if (!m["resume"].B) return;
+            a = m["w"][Me].I; b = m["w"][1 - Me].I; heraldOn = false; pose = new[] { "grip", "grip" }; bonus = 0;
+            target = Mathf.Clamp((a - b) * 12, -26, 26);
+            if (m["chose"].B) { phase = "wait"; msg = Loc.L($"Холболт сэргэлээ. {oppName} мэхээ сонгож байна…", $"Back online. {oppName} is choosing a move…"); }
+            else if (phase != "timing" && phase != "skill") { phase = "choose"; msg = Loc.L("Холболт сэргэлээ. Мэхээ сонго!", "Back online. Choose your move!"); }
+        }
+        /** The connection dropped: the server keeps the bout 10 seconds for us. */
+        public void OnLost() { roomOpen = false; if (overF) return; lost = true; msg = Loc.L("Холболт тасарлаа. Дахин холбогдож байна…", "The connection dropped. Reconnecting…"); }
+        /** Back online and the server said who we are: if it doesn't hand this bout back soon, the bout went on without us. */
+        public void OnHello() { if (lost && !overF) backCheckAt = Time.realtimeSinceStartup + 2.5f; }
+        public void OnRoomClosed() { roomOpen = false; }
+        public void OnAgain() { oppAgain = true; Sfx.Pop(); }
+        /** The server's arena messages for this bout: the other one has chosen, a round's result, the end. */
+        public void OnArena(Game g, J m)
+        {
+            if (m["id"].S != matchId) return;
+            string t = m["t"].S;
+            if (t == "ar-wait") { if (!overF) { oppReady = true; Sfx.Pop(); } }
+            else if (t == "ar-res" && !overF)
+            {
+                int me = Me, op = 1 - me;
+                string mm = m["m"][me].S, om = m["m"][op].S; float mp = m["p"][me].F, opw = m["p"][op].F;
+                if (!Rules.MOVES.Any(q => q.id == mm) || !Rules.MOVES.Any(q => q.id == om)) return;
+                lateMe = m["late"][me].B; bool lateOp = m["late"][op].B;
+                if (mm != move || lateMe) bonus = 0;
+                int r = m["r"].I * (me == 0 ? 1 : -1);
+                Apply(r, mm, mp, om, opw);
+                a = m["w"][me].I; b = m["w"][op].I;   // the server's count is the truth
+                target = Mathf.Clamp((a - b) * 12, -26, 26) + (r > 0 ? 6 : r < 0 ? -6 : 0);
+                if (lateMe && lateOp) msg = Loc.L("Хоёулаа хугацаандаа мэхээ хийсэнгүй. Тэнцлээ!", "Neither of you moved in time. Even!");
+                else if (lateMe) msg = Loc.L("Цаг дууслаа! Мэхээ хийж амжсангүй, өрсөлдөгч давууллаа.", "Time ran out! You didn't make your move, so your opponent gains.");
+                else if (lateOp) msg = Loc.L($"{oppName} хугацаандаа мэхээ хийсэнгүй. Та давууллаа!", $"{oppName} didn't move in time. You gain the upper hand!");
+                oppReady = false; Clock(m);
+            }
+            else if (t == "ar-end") FinishArena(g, m);
+        }
+        void FinishArena(Game g, J m)
+        {
+            if (overF) return;
+            int me = Me, winner = m["winner"].I; bool draw = winner == -1;
+            arReason = m["reason"].S ?? ""; arCoins = m["coins"].I; arXp = m["xp"].I;
+            rated = m.Has("rating"); if (rated) { rBefore = m["rating"]["before"].I; rAfter = m["rating"]["after"].I; }
+            if (m.Has("wins")) { a = m["wins"][me].I; b = m["wins"][1 - me].I; }
+            overF = true; phase = "done"; end = Time.time; deadlineAt = -1; lost = false; backCheckAt = -1;
+            won = winner == me; cut = arReason == "quit" || arReason == "left"; noBout = draw;
+            pose = draw ? new[] { "idle", "idle" } : won ? new[] { "dance", "fall" } : new[] { "fall", "dance" };
+            target = draw ? 0 : won ? 18 : -18;
+            if (won) { Sfx.Win(); g.Confetti(80); } else Sfx.Bad();
+            var wr = g.V.wr; if (arMode != "cpu") { if (won) wr.pvpW++; else if (!draw) wr.pvpL++; }   // coins and XP come from the server
+            g.V.Save(); g.CheckAchievements();
+            msg = draw ? Loc.L("Тэнцлээ! Хоёулаа сайн барилдлаа.", "A draw! You both wrestled well.")
+                : cut ? (won ? Loc.L($"{oppName} барилдаанаас гарлаа. Та яллаа!", $"{oppName} left the bout. You win!")
+                    : arReason == "quit" ? Loc.L("Та бууж өглөө.", "You gave up.") : Loc.L("Та барилдаанаас холдсон тул ялагдлаа.", "You were away from the bout, so it was lost."))
+                : won ? Loc.L($"Та {oppName}-г унагаалаа! Бүргэд шиг дэвээрэй!", $"You threw {oppName}! Do the eagle dance!") : Loc.L($"{oppName} яллаа. Дараагийн удаа!", $"{oppName} won. Next time!");
+        }
+        /** The bout ended while we were away (the server handed nothing back). */
+        void GoneWhileAway()
+        {
+            if (overF) return;
+            overF = true; phase = "done"; end = Time.time; deadlineAt = -1; lost = false; won = false; cut = true; noBout = true; roomOpen = false;
+            pose = new[] { "idle", "idle" }; target = 0;
+            msg = Loc.L("Холболт удаан тасарсан тул барилдаан дууслаа.", "The connection was gone too long, so the bout is over.");
+        }
 
         /** The server's wrestling messages for this bout: the other one has chosen, a round's result, the end. */
         public void OnNet(Game g, J m)
@@ -204,10 +294,18 @@ public sealed partial class Game
                 : cut ? (won ? Loc.L($"{oppName} барилдаанаас гарлаа. Та яллаа!", $"{oppName} left the bout. You win!") : Loc.L("Та бууж өглөө.", "You gave up."))
                 : won ? Loc.L($"Та {oppName}-г унагаалаа! Бүргэд шиг дэвээрэй!", $"You threw {oppName}! Do the eagle dance!") : Loc.L($"{oppName} яллаа. Дараагийн удаа!", $"{oppName} won. Next time!");
         }
-        void Leave(Game g) { if (pvp && !overF) g.net.Send("{\"t\":\"wr-quit\"}"); else g.Close(); }   // the server answers a quit with wr-end
+        // the server answers a quit with wr-end (ar-end in the arena); offline there is no one to tell
+        void Leave(Game g) { if (pvp && !overF && g.net.Online) g.net.Send(ar ? "{\"t\":\"ar-quit\"}" : "{\"t\":\"wr-quit\"}"); else g.Close(); }
         public override void Closed(Game g)
         {
             if (!pvp) return;
+            if (ar)
+            {
+                if (!overF) g.net.Send("{\"t\":\"ar-quit\"}");
+                else if (arMode == "friend" && roomOpen && !Replaced) g.net.Send("{\"t\":\"ar-room-close\"}");   // done with this friend: the room goes
+                g.ArenaBoutClosed(this);
+                return;
+            }
             if (!overF) g.net.Send("{\"t\":\"wr-quit\"}");
             if (g.remote == this) g.remote = null;
         }
@@ -246,6 +344,7 @@ public sealed partial class Game
         public override void Tick(Game g, float dt)
         {
             off += (target - off) * Mathf.Min(1, dt * 8);
+            if (backCheckAt > 0 && Time.realtimeSinceStartup > backCheckAt) { backCheckAt = -1; GoneWhileAway(); }
             if (phase == "pause" && Time.time - t0 > 0.9f && !overF) { pose = new[] { "grip", "grip" }; phase = "choose"; msg = Loc.L("Мэхээ сонго!", "Choose your move!"); }
             if (phase == "timing") { marker = (Mathf.Sin((Time.time - t0) * barSpeed) + 1) / 2; if (Time.time - t0 > 5) Lock(-1); }
             if (phase == "skill")
@@ -299,7 +398,9 @@ public sealed partial class Game
             if (bonus > 0) { power = Mathf.Min(1, power + bonus); bonus = 0; } // the eagle dance's power
             if (pvp) // a friend reads you with their own eyes: send the move, the server decides when both have chosen
             {
-                I.net.WrMove(move, power); phase = "wait"; Sfx.Tap();
+                if (ar) I.net.Send("{\"t\":\"ar-mv\",\"m\":" + Net.Q(move) + ",\"p\":" + Mathf.Clamp01(power).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + "}");
+                else I.net.WrMove(move, power);
+                phase = "wait"; Sfx.Tap();
                 msg = oppReady ? Loc.L("Мэх илгээлээ…", "Move sent…") : Loc.L($"{oppName} мэхээ сонгож байна…", $"{oppName} is choosing a move…");
                 return;
             }
@@ -390,7 +491,8 @@ public sealed partial class Game
             }
             var safe = Screen.safeArea; float U = g.UiScale, top = Screen.height - safe.yMax + U * 8;
             // the top bar: the round, both names and their falls, and what the herald calls out
-            string info = (practice ? Loc.L("Бөхийн сургууль · Дасгал", "Wrestling school · Practice") : pvp ? $"{Loc.L("Найзтайгаа барилдах", "Wrestling a friend")} · {need} {Loc.L("унагаалт", "falls")}" : $"{Loc.L("Наадам", "Naadam")} · {Loc.L("Даваа", "Round")} {round}/9 · {need} {Loc.L("унагаалт", "falls")}")
+            string arLabel = arMode == "friend" ? Loc.L("Найзтайгаа", "With a friend") : arMode == "cpu" ? Loc.L("Дасгал", "Sparring") : Loc.L("Чансаа", "Ranked");
+            string info = (practice ? Loc.L("Бөхийн сургууль · Дасгал", "Wrestling school · Practice") : ar ? $"{Loc.L("Бөхийн өргөө", "Wrestling Arena")} · {arLabel} · {need} {Loc.L("унагаалт", "falls")}" : pvp ? $"{Loc.L("Найзтайгаа барилдах", "Wrestling a friend")} · {need} {Loc.L("унагаалт", "falls")}" : $"{Loc.L("Наадам", "Naadam")} · {Loc.L("Даваа", "Round")} {round}/9 · {need} {Loc.L("унагаалт", "falls")}")
                 + $"\n<color=#d8342b><b>{g.MyName}</b></color> {new string('●', a)}{new string('○', Mathf.Max(0, need - a))}   ·   {new string('●', b)}{new string('○', Mathf.Max(0, need - b))} <color=#2b5bd8><b>{(oppT != null ? oppT.name + " " : "")}{oppName}</b></color>"
                 + (heraldOn ? $"\n<b>{Loc.L("Засуул", "Herald")}:</b> {herald}" : "");
             var ist = new GUIStyle(g.sNote) { fontSize = g.Ts(12), wordWrap = true }; float iw = Mathf.Min(Screen.width - U * 120, U * 640), ih = ist.CalcHeight(new GUIContent(info), iw) + U * 6;
@@ -416,6 +518,11 @@ public sealed partial class Game
         {
             g.Text(msg);
             if (pvp && oppReady && phase != "wait" && phase != "done") g.Small("<color=#f7c646>" + Loc.L($"{oppName} мэхээ сонгочихлоо!", $"{oppName} has chosen!") + "</color>");
+            if (ar && deadlineAt > 0 && !lost && phase != "done" && phase != "wait" && phase != "result")
+            {
+                int secs = Mathf.Max(0, Mathf.CeilToInt(deadlineAt - Time.realtimeSinceStartup));
+                g.Small((secs <= 5 ? "<color=#e14b3d>" : "<color=#b8b0a8>") + Loc.L($"⏱ Мэх хийх хугацаа: {secs} сек", $"⏱ Time to move: {secs}s") + "</color>");
+            }
             if (practice && phase != "done") // the school's coach explains as you go
             {
                 if (phase == "devee") g.Fact(Loc.L("Товч гэрэлтэх бүрт дар. Сайн бүжиглэвэл эхний мэх чинь хүчтэй болно!", "Tap each time the button glows. A good dance makes your first move stronger!"), true, Loc.L("Бүргэд шиг бүжиглэ", "Dance like an eagle"));
@@ -450,6 +557,26 @@ public sealed partial class Game
                     }
                 case "skill": SkillUI(g); break;
                 case "wait": g.Small(new string('.', 1 + (int)(Time.time * 2) % 3)); break;
+                case "done" when ar:
+                    {
+                        if (!noBout) g.Fact(Loc.L("Унасан бөх ялсан бөхийн суган доогуур гарч хүндэтгэл үзүүлдэг. Ялагдсан ч хүндэтгэлтэй байх нь бөхийн ёс.", "The fallen wrestler passes under the winner's arm as a sign of respect. Losing with honour is the wrestler's way."), true, Loc.L("Бөхийн ёс", "Wrestling custom"));
+                        string pay = (arCoins > 0 ? $"+{arCoins} {Loc.L("зоос", "coins")} · " : "") + $"+{arXp} XP";
+                        if (rated) { int d = rAfter - rBefore; pay += " · " + Loc.L("Оноо", "Rating") + $" {rBefore} → <b>{rAfter}</b> (<color={(d >= 0 ? "#2ea35f" : "#e14b3d")}>{(d >= 0 ? "+" : "")}{d}</color>)"; }
+                        if (arXp > 0 || arCoins > 0 || rated) g.Text(pay);
+                        if (arMode == "friend")
+                        {
+                            if (!roomOpen) g.Small(Loc.L("Өрөө хаагдлаа.", "The room has closed."));
+                            else if (askedAgain) g.Small(Loc.L($"{oppName}-г хүлээж байна…", $"Waiting for {oppName}…"));
+                            else if (oppAgain) g.Small("<color=#f7c646>" + Loc.L($"{oppName} дахин барилдмаар байна!", $"{oppName} wants to wrestle again!") + "</color>");
+                        }
+                        GUILayout.BeginHorizontal();
+                        if (g.Btn(Loc.L("Өргөө рүү", "To the arena"))) g.Later(() => g.Swap(new ArenaHubModal()));
+                        if (arMode == "friend") { if (g.Btn(Loc.L("Дахин барилдах", "Wrestle again") + " ►", true, 44, roomOpen && !askedAgain && g.net.Online)) g.Later(() => { askedAgain = true; g.net.Send("{\"t\":\"ar-again\"}"); }); }
+                        else if (arMode == "cpu") { if (g.Btn(Loc.L("Дахиад", "Again") + " ►", true, 44, g.net.Online)) { int lv = Mathf.Clamp(arLv, 1, 3); g.Later(() => { g.Swap(new ArenaHubModal()); g.net.Send("{\"t\":\"ar-cpu\",\"lv\":" + lv + "}"); }); } }
+                        else if (g.Btn(Loc.L("Дахин хайх", "Find another") + " ►", true, 44, g.net.Online)) g.Later(() => { g.Swap(new ArenaHubModal()); g.net.Send("{\"t\":\"ar-queue\"}"); });
+                        GUILayout.EndHorizontal();
+                        break;
+                    }
                 case "done" when pvp:
                     if (!noBout) g.Fact(Loc.L("Унасан бөх ялсан бөхийн суган доогуур гарч хүндэтгэл үзүүлдэг. Ялагдсан ч хүндэтгэлтэй байх нь бөхийн ёс.", "The fallen wrestler passes under the winner's arm as a sign of respect. Losing with honour is the wrestler's way."), true, Loc.L("Бөхийн ёс", "Wrestling custom"));
                     if (g.Btn(Loc.L("Хаах", "Close"), true, 44)) g.Later(g.Close);

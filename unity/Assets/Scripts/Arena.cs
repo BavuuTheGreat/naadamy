@@ -1,7 +1,7 @@
 // Бөхийн өргөө, the online arena (server/arena.js, accounts.js): a wrestler account with a unique username and a password,
-// friends, ranked matchmaking, duels with a friend by a 5-letter code, sparring with the CPU, and the boards (rating, wins,
-// level, XP). The bouts are in ArenaFight.cs, the duels in ArenaDuel.cs. Everything is kept on the server; this side shows
-// it and sends what is asked.
+// friends, ranked matchmaking, bouts with a friend by a 5-letter code, sparring with the CPU, and the boards (rating, wins,
+// level, XP). Every bout is Naadam wrestling, played in WrestleModal (GameWrestle.cs) with the server weighing the moves.
+// Everything is kept on the server; this side shows it and sends what is asked.
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -68,11 +68,11 @@ public sealed partial class Game
         public readonly Dictionary<string, List<ArenaPerson>> boards = new Dictionary<string, List<ArenaPerson>>();
         public readonly List<ArenaHist> hist = new List<ArenaHist>();
         public bool queued, friendsKnown; public int queueN; public float queuedAt, helloAt = -99;
-        public ArenaFightModal fight;
         public string roomCode;   // the code of the room we opened and wait in
-        public ArenaDuelModal duel;
     }
     public readonly ArenaInfo arena = new ArenaInfo();
+    WrestleModal arenaBout;   // the arena bout on screen
+    void ArenaBoutClosed(WrestleModal w) { if (arenaBout == w) arenaBout = null; }
 
     public static string TierName(string id)
     {
@@ -106,7 +106,7 @@ public sealed partial class Game
     }
     public void ArenaHello() { arena.helloAt = Time.realtimeSinceStartup; net.Send("{\"t\":\"ar-hello\"}"); }
     /** The connection dropped: the queue is gone (the server forgets it), a bout waits for us to come back. */
-    public void ArenaLost() { arena.queued = false; arena.known = false; arena.roomCode = null; arena.duel?.OnLost(); }
+    public void ArenaLost() { arena.queued = false; arena.known = false; arena.roomCode = null; arenaBout?.OnLost(); }
 
     public void OnArenaMsg(J m)
     {
@@ -115,6 +115,7 @@ public sealed partial class Game
         {
             case "ar-me":
                 A.known = true; A.u = m["u"].IsNull ? null : Clean(m["u"].S);
+                arenaBout?.OnHello();   // a bout the server still has comes back right after this (ar-start, resume)
                 if (A.u == null) { A.friends.Clear(); A.inc.Clear(); A.outq.Clear(); A.boards.Clear(); A.hist.Clear(); A.friendsKnown = false; return; }
                 A.rating = m["rating"].I; A.tier = m["tier"].S ?? "novice"; A.w = m["w"].I; A.l = m["l"].I; A.d = m["d"].I; A.streak = m["streak"].I; A.best = m["best"].I; A.n = m["n"].I; A.xp = m["xp"].I; A.lvl = Math.Max(1, m["lvl"].I);
                 return;
@@ -143,21 +144,17 @@ public sealed partial class Game
             case "ar-queued": if (!A.queued) A.queuedAt = Time.realtimeSinceStartup; A.queued = true; A.queueN = m["n"].I; return;
             case "ar-cancelled": A.queued = false; return;
             case "ar-start":
-                A.queued = false; CloseAll();
-                A.fight = new ArenaFightModal(this, m); Open(A.fight); Sfx.Horn(); Sfx.Crowd();
-                return;
-            case "ar-st": A.fight?.OnSnap(m); return;
-            case "ar-end": A.fight?.OnEnd(this, m); ArenaHello(); return;
-            case "ar-room": A.queued = false; A.roomCode = m["code"].S; return;
-            case "ar-room-closed": A.roomCode = null; A.duel?.OnRoomClosed(); return;
-            case "ar-duel":
                 A.queued = false; A.roomCode = null;
-                if (A.duel != null) A.duel.Replaced = true;
-                CloseAll();
-                A.duel = new ArenaDuelModal(m); Open(A.duel); Sfx.Horn();
+                if (arenaBout != null && arenaBout.ArId == m["id"].S) { arenaBout.OnStart(m); return; }   // back after a dropped connection
+                if (arenaBout != null) arenaBout.Replaced = true;   // the next bout with the same friend: the room stays
+                arenaBout = null; CloseAll();
+                arenaBout = WrestleModal.Arena(this, m); Open(arenaBout);
                 return;
-            case "ar-duel-end": A.duel?.OnEnd(this, m); ArenaHello(); return;
-            case "ar-duel-again": A.duel?.OnAgain(); return;
+            case "ar-wait": case "ar-res": arenaBout?.OnArena(this, m); return;
+            case "ar-end": arenaBout?.OnArena(this, m); ArenaHello(); return;
+            case "ar-room": A.queued = false; A.roomCode = m["code"].S; return;
+            case "ar-room-closed": A.roomCode = null; arenaBout?.OnRoomClosed(); return;
+            case "ar-again": arenaBout?.OnAgain(); return;
             case "ar-err":
             {
                 string why = m["reason"].S;
@@ -306,7 +303,7 @@ public sealed partial class Game
             else if (friendMenu) FriendMenu(g);
             else
             {
-                if (g.Btn(Loc.L("Найзтайгаа", "With a friend") + "\n<size=" + g.Ts(10) + ">" + Loc.L("5 үсэгтэй кодоор, 5 секундэд хэн нь сайн, хурдан хийнэ", "By a 5-letter code: 5 seconds, the better and quicker one wins") + "</size>", true, 60)) g.Later(() => friendMenu = true);
+                if (g.Btn(Loc.L("Найзтайгаа", "With a friend") + "\n<size=" + g.Ts(10) + ">" + Loc.L("5 үсэгтэй кодоор, Наадмын бөх шиг барилдана", "By a 5-letter code: a real Naadam bout, move by move") + "</size>", true, 60)) g.Later(() => friendMenu = true);
                 if (g.Btn(Loc.L("Чансааны барилдаан", "Ranked bout") + "\n<size=" + g.Ts(10) + ">" + Loc.L("Санамсаргүй хүнтэй таарч, оноо хожно", "Matched with a random wrestler; win to climb") + "</size>", true, 60))
                     g.Later(() => g.net.Send("{\"t\":\"ar-queue\"}"));
             }
@@ -456,17 +453,13 @@ public sealed partial class Game
         // ---------------------------------------------------------------- how to wrestle
         void How(Game g)
         {
-            g.Text(Loc.L("<b>Найзтайгаа:</b> нэг нь код үүсгээд, нөгөө нь тэр 5 үсэгтэй кодоор орно. Хоёулаа ижил тоглоомыг 5 секундэд хийж, хэн нь сайн, хурдан хийсэн нь ялна. Оноонд нөлөөлөхгүй.",
-                "<b>With a friend:</b> one makes a code, the other joins with those 5 letters. Both play the same game for 5 seconds, and the better, quicker one wins. It doesn't change your rating."));
-            g.Fact(Loc.L("Тоглогч бүр яг адилхан бөх. Санамсаргүй зүйл байхгүй: цаг тааруулж, өрсөлдөгчөө уншиж, зөв хариулсан нь ялна.", "Every wrestler is the same. Nothing is random: timing, reading your opponent and the right answer win."), true, Loc.L("Ур чадвар", "Skill"));
-            g.Text(Loc.L("<b>Удирдлага</b> (гар): ← → алхах (хоёр дарвал гүйх) · <b>J</b> түлхэх · <b>K</b> шилбэ (→K мөрөөр дайрах) · <b>L</b> барьцаа (→L шүүрэх) · <b>Space/I</b> тэнцвэр барих · <b>O</b> аваргын мэх. Утсан дээр дэлгэцийн товчнууд.",
-                "<b>Controls</b> (keyboard): ← → walk (double-tap to dash) · <b>J</b> shove (→J push) · <b>K</b> sweep (→K shoulder charge) · <b>L</b> grab (→L lunge) · <b>Space/I</b> brace · <b>O</b> champion's throw. On a phone, the buttons on screen."));
-            g.Text(Loc.L("<b>Хайч, чулуу, даавуу шиг:</b>\n• Түлхэлт барьцааг таслана.\n• Тэнцвэр барих (brace) түлхэлт, шилбийг зогсооно. Цохилт ирэхийн яг өмнө дарвал няцааж, өрсөлдөгч чинь ганхана.\n• Барьцаа тэнцвэр барьсныг давж барилцана.",
-                "<b>Like rock, paper, scissors:</b>\n• A shove interrupts a grab.\n• Bracing stops shoves and sweeps. Brace just before the hit lands to parry: your opponent staggers.\n• A grab goes through a brace into the clinch."));
-            g.Text(Loc.L("<b>Барьцаанд:</b> барьсан бөх мэх хийнэ: →K дэгээ, ←K гуя, K өргөлт. Мэх бүр өөр хөдөлгөөнтэй эхэлдэг. Нөгөө бөх нь тэр мэхийг таниад яг адилхан чиглэл + L дарвал мэхийг эргүүлж, барьцааг өөрөө авна. Эрт таах гэвэл J (татах) хийж барина. J дарвал түлхээд мултарна.",
-                "<b>In the clinch:</b> the one holding the grip throws: →K hook, ←K hip toss, K lift. Each throw starts with its own tell. The other wrestler reads it and answers with the same direction + L to turn it over and take the grip. Guess too early and a J jolt punishes it. J also shoves you out of the clinch."));
-            g.Text(Loc.L("<b>Тэнцвэр</b> (дээд шар зураас) дуусвал унана. <b>Тэсвэр</b> (ногоон) мэх бүрт зарцуулагдана. <b>Бүргэд</b> (цэнхэр) дүүрвэл O дарж аваргын мэх хий. Хоёр даваа түрүүлж авсан нь ялна.",
-                "<b>Balance</b> (the yellow bar) gone means a fall. <b>Stamina</b> (green) pays for every move. When the <b>eagle</b> meter (blue) is full, O throws the champion's throw. Two rounds win the bout."));
+            g.Text(Loc.L("<b>Барилдаан</b> нь Наадмын бөх шиг: засуул хоёр бөхийн нэрийг дуудаж, та бүргэд шиг дэвээ хийнэ. Дараа нь даваа бүрт хоёулаа мэхээ сонгоод, тэр мэхний ур чадварын тоглоомыг хийнэ. Хоёр унагаасан нь ялна.",
+                "<b>A bout</b> is Naadam wrestling: the herald calls both names and you do the eagle dance. Then each round you both pick a move and do its skill game. Two falls win."));
+            g.Fact(Loc.L("Мэх бүр заримыг нь дийлж, заримд нь дийлддэг (хайч, чулуу, даавуу шиг). Мэхээ сайн хийх тусам хүчтэй болно. Хоёр бөхийн мэхийг сервер жигнэж, хэн унасныг шийднэ.", "Every move beats some moves and loses to others, like rock, paper, scissors. The better you do it, the stronger it is. The server weighs both moves and says who fell."), true, Loc.L("Мэх", "Moves"));
+            g.Text(Loc.L("<b>Хугацаа:</b> даваа бүрт мэхээ хийх 25 секунд байна. Хугацаандаа хийгээгүй бол тэр даваанд унана, хоёр удаа дараалан хийгээгүй бол барилдаанаас гарсанд тооцогдоно.",
+                "<b>Time:</b> each round you have 25 seconds to make your move. Miss it and you fall that round; miss two in a row and the bout is lost."));
+            g.Text(Loc.L("<b>Найзтайгаа:</b> нэг нь код үүсгээд, нөгөө нь тэр 5 үсэгтэй кодоор орно. Оноонд нөлөөлөхгүй. Дууссаны дараа «Дахин барилдах» дарвал дахин барилдана.\n<b>Чансаа:</b> тэнцүү хүчтэй хүнтэй таарч, ялбал оноо нэмэгдэнэ.\n<b>Дасгал:</b> компьютертэй, оноонд нөлөөлөхгүй.",
+                "<b>With a friend:</b> one makes a code, the other joins with those 5 letters. It doesn't change your rating. Press \"Wrestle again\" after the bout for another.\n<b>Ranked:</b> matched with a wrestler of your level; a win raises your rating.\n<b>Sparring:</b> against the CPU, rating unchanged."));
         }
         public override void Press(Game g) { }
     }
