@@ -1,7 +1,7 @@
 // Монгол бичгийн академи (js/bichig.js): a master scribe teaches the traditional Mongol script. Watch the letter being written
 // top to bottom, trace it with a finger, then write it from memory. Tracing is checked against the real letter shape: how
 // much of the letter you covered, how well you stayed on it, and that you wrote downwards. The letters are rendered with
-// Noto Sans Mongolian by Tools/render-bichig.js (Unity can't shape Mongol script), into Resources/Art/bichig_glyphs.
+// Noto Sans Mongolian ahead of time (Unity can't shape Mongol script), into Resources/Art/bichig_glyphs.
 using System;
 using System.Collections.Generic;
 using System.Linq;

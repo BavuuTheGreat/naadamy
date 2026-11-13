@@ -1,4 +1,4 @@
-/* Нутаг world: map layout, collision and path finding. Drawing is in pixel.js. */
+/* Нутаг world: the map layout and what blocks walking, as the server checks positions (Unity has its own copy in World.cs). */
 (function (root, factory) {
   const TG = root.TG || {};
   if (!TG.vrules && typeof module === 'object' && module.exports) TG.vrules = require('./rules.js');
@@ -6,10 +6,9 @@
   if (typeof module === 'object' && module.exports) module.exports = api;
   else { root.TG = root.TG || {}; root.TG.vworld = api; }
 })(typeof window !== 'undefined' ? window : globalThis, function (TG) {
-  const R = TG.vrules, W = R.W, H = R.H, T = 16;
+  const R = TG.vrules, W = R.W, H = R.H;
   let seed = 20261021;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  const hash = (x, y) => { let n = x * 374761393 + y * 668265263; n = (n ^ (n >> 13)) * 1274126177; return ((n ^ (n >> 16)) >>> 0) / 4294967295; };
 
   // ---------------------------------------------------------------- map
   // g grass · p path · s plaza · w water · d dock · k trampled earth (dairy yard) · f fence · T tree · B building · r rock
@@ -85,65 +84,19 @@
     { id: 'setsen', kind: 'statue', x: 40, y: 6, w: 1, h: 1, door: { x: 40, y: 7 } }, // the stone statue of Setsen, in the open space left of the stands
     ...LOT_X.map((x, i) => ({ id: 'lot' + i, kind: 'lot', i, x, y: 28, w: 3, h: 3, door: { x: x + 1, y: 31 } })),
   ];
-  const lots = objects.filter((o) => o.kind === 'lot');
-  const occ = {};
-  for (const o of objects) for (let y = o.y; y < o.y + o.h; y++) for (let x = o.x; x < o.x + o.w; x++) { set(x, y, 'B'); occ[x + ',' + y] = o; }
-  const DOCK = { x: 26, y: 5 };
-  // Horse race: from the Naadam arena west along the main road, south down the long road, east to the finish by the gers
-  // points are in feet coordinates (tile units, centre of the two-tile-wide roads)
-  const RACE = [{ x: 50, y: 13 }, { x: 34, y: 13 }, { x: 18, y: 13 }, { x: 18, y: 22 }, { x: 18, y: 32 }, { x: 28, y: 32 }, { x: 39.5, y: 32 }];
-  // Naadam race loop around town (one lap ≈ 86 tiles): start line on the main road, east road, south lane, west road
-  const LAP = [{ x: 30, y: 13 }, { x: 42, y: 13 }, { x: 42, y: 22 }, { x: 42, y: 32 }, { x: 30, y: 32 }, { x: 18, y: 32 }, { x: 18, y: 22 }, { x: 18, y: 13 }];
-
-  // trees, flowers, rocks
-  const trees = [], flowers = [];
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (g[y][x] === 'T') trees.push({ x, y, pine: hash(x, y) > 0.7 });
+  for (const o of objects) for (let y = o.y; y < o.y + o.h; y++) for (let x = o.x; x < o.x + o.w; x++) set(x, y, 'B');
+  // trees and rocks
   const clearAround = (x, y) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const c = (g[y + dy] || [])[x + dx]; if (c && c !== 'g' && c !== 'T') return false; } return true; };
   const reserved = (x, y) => (x >= 13 && x <= 22 && y >= 9 && y <= 16) || (y >= 2 && y <= 7 && x >= 2 && x <= 14) || (x >= 22 && x <= 33 && y >= 18 && y <= 25) || (x >= 3 && x <= 14 && y >= 14 && y <= 24) || (x >= 38 && y >= 3 && y <= 19) || (x >= 1 && x <= 41 && y >= 26 && y <= 33) || (x >= 43 && x <= 50 && y >= 22 && y <= 28) || (x >= 43 && x <= 54 && y >= 30 && y <= 37);
   for (let y = 2; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
     if (g[y][x] !== 'g' || reserved(x, y) || !clearAround(x, y)) continue;
     const r = rnd();
-    if (r < 0.1) { set(x, y, 'T'); trees.push({ x, y, pine: rnd() > 0.6 }); }
+    if (r < 0.1) { set(x, y, 'T'); rnd(); } // the second draw (a pine or not, once) keeps the seeded map the same
     else if (r < 0.13) set(x, y, 'r');
   }
-  for (let y = 2; y < H - 1; y++) for (let x = 1; x < W - 1; x++) if (g[y][x] === 'g' && hash(x * 3, y * 7) < 0.09) flowers.push({ x, y, c: ['#FF8FB1', '#FFD34E', '#FFFFFF', '#B49CFF'][Math.floor(hash(x, y * 5) * 4)] });
 
   const blocked = (x, y) => x < 0 || y < 0 || x >= W || y >= H || 'TwfBr'.includes(g[y][x]);
 
-  /** A* path on the tile grid with 8 directions (no corner cutting). Returns tiles after the start, or null. */
-  function findPath(sx, sy, tx, ty) {
-    if (blocked(tx, ty)) return null;
-    if (sx === tx && sy === ty) return [];
-    const key = (x, y) => y * W + x, open = [[sx, sy]], g0 = new Map([[key(sx, sy), 0]]), prev = new Map(), done = new Set();
-    const hf = (x, y) => { const dx = Math.abs(x - tx), dy = Math.abs(y - ty); return Math.max(dx, dy) + 0.41 * Math.min(dx, dy); };
-    for (let guard = 0; open.length && guard < 6000; guard++) {
-      let bi = 0; for (let i = 1; i < open.length; i++) if (g0.get(key(...open[i])) + hf(...open[i]) < g0.get(key(...open[bi])) + hf(...open[bi])) bi = i;
-      const [x, y] = open.splice(bi, 1)[0], k = key(x, y);
-      if (done.has(k)) continue; done.add(k);
-      if (x === tx && y === ty) { const path = []; let c = k; while (c !== key(sx, sy)) { path.unshift({ x: c % W, y: Math.floor(c / W) }); c = prev.get(c); } return path; }
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
-        const nx = x + dx, ny = y + dy;
-        if (blocked(nx, ny) || (dx && dy && (blocked(x + dx, y) || blocked(x, y + dy)))) continue;
-        const nk = key(nx, ny), ng = g0.get(k) + (dx && dy ? 1.41 : 1);
-        if (!g0.has(nk) || ng < g0.get(nk)) { g0.set(nk, ng); prev.set(nk, k); open.push([nx, ny]); }
-      }
-    }
-    return null;
-  }
-  /** Nearest walkable tile next to (x,y), preferring ones close to (fx,fy). */
-  function nearestOpen(x, y, fx, fy) {
-    let best = null, bd = 1e9;
-    for (let r = 1; r <= 3 && !best; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
-      const nx = x + dx, ny = y + dy;
-      if (blocked(nx, ny)) continue;
-      const d = Math.abs(nx - fx) + Math.abs(ny - fy) + Math.abs(dx) + Math.abs(dy) * 1.01;
-      if (d < bd) { bd = d; best = { x: nx, y: ny }; }
-    }
-    return best;
-  }
-
-  // drawing lives in pixel.js (16-pixel tiles, pure pixel art)
-  const api = { W, H, T, g, objects, occ, trees, DOCK, ARENA, RACE, LAP, lots, blocked, findPath, nearestOpen, hash };
-  api.renderStatic = () => TG.pixel.renderStatic(api);
+  const api = { W, H, g, blocked };
   return api;
 });

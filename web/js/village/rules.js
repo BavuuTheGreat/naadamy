@@ -9,33 +9,6 @@
   const VERSION = 14; // bump when the game and server must change together (moves, messages), so an old running server is noticed
   const T = (mn, en) => ({ mn, en });
 
-  // The herding and dairy yard (хот айл): animals you milk, and the white foods (цагаан идээ) you make from the milk.
-  // wait = seconds before the same animal can be milked again.
-  const DAIRY_ANIMALS = {
-    cow: { e: '🐄', name: T('Үнээ', 'Cow'), gives: 'milk', n: 2, wait: 90, young: T('Тугал', 'Calf') },
-    goat: { e: '🐐', name: T('Ямаа', 'Goat'), gives: 'milk', n: 1, wait: 60, young: T('Ишиг', 'Kid') },
-    mare: { e: '🐎', name: T('Гүү', 'Mare'), gives: 'mare', n: 1, wait: 75, young: T('Унага', 'Foal') },
-  };
-  const DAIRY = {
-    milk: { e: '🥛', name: T('Сүү', 'Milk'), sell: 4 },
-    mare: { e: '🍶', name: T('Гүүний сүү', 'Mare’s milk'), sell: 5 },
-    aaruul: { e: '🧀', name: T('Ааруул', 'Aaruul'), sell: 9, food: true },
-    urum: { e: '🧈', name: T('Өрөм', 'Öröm cream'), sell: 12, food: true },
-    tarag: { e: '🥣', name: T('Тараг', 'Tarag yogurt'), sell: 8, food: true },
-    airag: { e: '🥛', name: T('Айраг', 'Airag'), sell: 14, food: true },
-  };
-
-  const FISH = {
-    perch: { e: '🐟', name: T('Алгана', 'Perch'), sell: 15, xp: 8, diff: 1, w: 50, fact: T('Алгана Монголын олон нуур, голд түгээмэл байдаг.', 'Perch are common in many Mongolian lakes and rivers.') },
-    pike: { e: '🐟', name: T('Цурхай', 'Pike'), sell: 30, xp: 14, diff: 2, w: 28, fact: T('Цурхай бол хурдан сэлдэг махчин загас.', 'Pike are fast-swimming predators.') },
-    lenok: { e: '🐠', name: T('Зэвэг', 'Lenok'), sell: 45, xp: 20, diff: 3, w: 16, fact: T('Зэвэг цэвэр, хүйтэн уулын голд амьдардаг.', 'Lenok live in clean, cold mountain rivers.') },
-    taimen: { e: '🐡', name: T('Хадран', 'Taimen'), sell: 0, xp: 60, coins: 50, diff: 4, w: 6, release: true,
-      fact: T('Хадран бол дэлхийн хамгийн том хулд загасны төрөл. Монголд хамгаалагдсан тул барьсан бол буцааж тавина!', 'Taimen is the largest salmon species in the world. It is protected in Mongolia, so we always release it!') },
-  };
-  const QUEST_TARGETS = {
-    milk: 3, dairy: 2, fish: 2, basar: 2, quiz: 3, lesson: 1, together: 1, pet: 3, sell: 5,
-    race: 1, archery: 3, wrestle: 1, etiquette: 1, defend: 1, eat: 3,
-  };
   const DAILY_QUEST_REWARDS = {
     milk: { coins: 20, xp: 25 }, dairy: { coins: 25, xp: 35 }, fish: { coins: 25, xp: 30 },
     basar: { coins: 15, xp: 25 }, quiz: { coins: 25, xp: 35 }, lesson: { coins: 30, xp: 40 },
@@ -137,7 +110,6 @@
     const A = base(ma, mb) + 0.8 * Math.max(0, Math.min(1, pa || 0)), B = base(mb, ma) + 0.8 * Math.max(0, Math.min(1, pb || 0));
     return Math.abs(A - B) < 0.04 ? 0 : A > B ? 1 : -1;
   }
-  const titleFor = (wr) => { if (!wr) return null; let t = null; for (const x of TITLES) if ((x.id === 'avarga' ? (wr.champ || 0) >= 2 : (wr.best || 0) >= x.need)) t = x.id; return t; };
   const ROOF = { blue: '#3f76db', red: '#e14b3d', green: '#2ea35f', purple: '#9466e0', orange: '#f39b2c', teal: '#1fa3a3' };
   const DOOR = { red: '#e14b3d', blue: '#3f76db', green: '#2ea35f', gold: '#e9a91f' };
   const FURNITURE = [
@@ -224,9 +196,7 @@
     { id: 'toono', gives: { toono: 1, bagana: 2, buslvvr: 3 }, goods: { wool: 2, aaruul: 1 }, coins: 25 },
     { id: 'uni', gives: { uni: 9 }, goods: { wool: 2 }, coins: 15 },
   ];
-  const COVER_PRICE = 20;
   function tradeCost(id, pay) { const t = TRADES.find((x) => x.id === id); return !t ? null : pay === 'coins' ? { coins: t.coins } : { ...t.goods }; }
-  const SHEAR_WOOL = 2, SHEAR_REGROW_MS = 45000, FELT_WOOL = 4;
   /** How far a lot's ger is built; gers saved before hands-on building have no stage and count as finished. */
   // ---------------------------------------------------------------- cloud save
   // A child's progress outside the wallet, in one shape for the web and Unity, kept by the server so it follows the child to
@@ -308,6 +278,7 @@
     return HANDS_ON.filter((a) => (a.id in did ? did[a.id] : !!(v.seen || {})['made_' + a.id])).map((a) => a.id);
   }
 
-  return { GER_STEPS, GER_DONE, GER_NEEDS, gerTry, gerUse, TRADES, COVER_PRICE, tradeCost, SHEAR_WOOL, SHEAR_REGROW_MS, FELT_WOOL, lotStage, unisTilt, HANDS_ON, handsOn,
-    cleanCloud, mergeCloud, VERSION, W, H, LOTS, TITLES, MOVES, beats, exchange, titleFor, ROOF, DOOR, FURNITURE, DAIRY_ANIMALS, DAIRY, FISH, QUEST_TARGETS, DAILY_QUEST_REWARDS, DAILY_ACTIVITY_REWARDS, DAILY_EARN_CAP, dailyQuests, PHRASES, EMOTES, SKINS, DEELS, LOOKS, ITEMS, ROOM_RE, level, cleanLook, now };
+  return { GER_STEPS, GER_DONE, gerTry, gerUse, tradeCost, lotStage, unisTilt, HANDS_ON, handsOn, cleanCloud, mergeCloud, VERSION, W, H, LOTS,
+    MOVES, exchange, ROOF, DOOR, FURNITURE, DAILY_QUEST_REWARDS, DAILY_ACTIVITY_REWARDS, DAILY_EARN_CAP, dailyQuests, PHRASES, EMOTES, ITEMS, ROOM_RE,
+    level, cleanLook };
 });

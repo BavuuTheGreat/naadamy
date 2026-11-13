@@ -1,8 +1,7 @@
 // Нутаг and the aimag trips in first person (js/fp.js): a Minecraft-style voxel world with mouse look, WASD, Space jump
 // with gravity, sprint (Shift, double-tap W or the Run button), auto-jump up one block and swimming. E or a click uses
 // whatever you are facing. Phones get a fixed joystick at the bottom left and drag-to-look everywhere else.
-// The worlds themselves are built by the web version's js/fpworld.js and exported by Tools/export-web-data.js
-// (Resources/World/*.bytes); the block textures are its 16×16 atlas (Resources/Art/fp_atlas).
+// The worlds themselves were built by the web version's js/fpworld.js (Resources/World/*.bytes); the block textures are its 16×16 atlas (Resources/Art/fp_atlas).
 using System;
 using System.Collections.Generic;
 using System.IO;

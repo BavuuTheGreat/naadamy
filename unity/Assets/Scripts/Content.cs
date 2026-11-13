@@ -6,7 +6,6 @@ public static partial class Rules
 {
     public static readonly string[] SKINS = { "#F6D3B3", "#EDBB93", "#D9A06E", "#B97A4A" };
     public static readonly string[] DEELS = { "blue", "red", "green", "purple", "pink", "gold", "teal", "brown", "white", "black" };
-    public const int GER_LEVEL = 1;
 
     // ---------------------------------------------------------------- daily quests
     public sealed class Quest { public int n, c, x; public Tx t; }

@@ -94,13 +94,5 @@
     }
     return lines.join('\n');
   }
-  /** Draw onto a canvas (browser). */
-  function toCanvas(canvas, text, scale = 6) {
-    const { size, modules } = encode(text, 'M'), q = 4, n = size + q * 2;
-    canvas.width = canvas.height = n * scale;
-    const x = canvas.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, n * scale, n * scale); x.fillStyle = '#000';
-    for (let r = 0; r < size; r++) for (let c = 0; c < size; c++) if (modules[r][c]) x.fillRect((c + q) * scale, (r + q) * scale, scale, scale);
-    return canvas;
-  }
-  return { encode, toTerminal, toCanvas };
+  return { encode, toTerminal };
 });
