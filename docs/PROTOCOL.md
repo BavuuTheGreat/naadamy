@@ -300,10 +300,11 @@ Good to know before building on this:
 ## Online arena
 
 Бөхийн өргөө, the online wrestling arena: wrestler accounts with unique usernames, friends, ranked matchmaking,
-5-second duels with a friend in a room with a code, sparring with the CPU and leaderboards. Bouts are simulated on the
-server (`server/arena-sim.js`), 30 ticks a second; clients only send what they hold and press. Code: `server/accounts.js`
-(HTTP), `server/arena.js` (WebSocket), `server/arena-store.js` (storage), `server/arena-bot.js` (the CPU); Unity:
-`Arena.cs` (accounts, hub, friends, boards), `ArenaFight.cs` (the bout) and `ArenaDuel.cs` (the duel).
+bouts with a friend in a room with a code, sparring with the CPU and leaderboards. Every bout is Naadam wrestling, as in
+the village: the eagle dance, then each round both pick a move and do its skill game on the device, which sends the move
+and its power; the server weighs both (`rules.js` `exchange`) and counts the falls. Code: `server/accounts.js` (HTTP),
+`server/arena.js` (WebSocket, bouts and the CPU), `server/arena-store.js` (storage); Unity: `Arena.cs` (accounts, hub,
+friends, boards) and `WrestleModal` in `GameWrestle.cs` (the bout).
 
 ### Accounts: `POST /api/account`
 
@@ -344,38 +345,35 @@ with `resume: true`. Everything else answers `{ t: 'ar-err', reason: 'no-account
 | `fr-add` / `fr-accept` / `fr-remove` | `u` (a username) | `fr-res { act, ok, reason, u }` and a new `fr-list`; the other player gets `fr-ping { act, u }`. Asking someone who asked you accepts. `fr-remove` also declines or takes back a request. At most 100 friends and 50 open requests |
 | `ar-queue` / `ar-cancel` | | `ar-queued { n }` until matched (`ar-start`), `ar-cancelled`. Players are matched by rating, the window widening 25 points a second from 100 |
 | `ar-room-open` / `ar-room-close` | | `ar-room { code }` (5 letters, no I, L or O; open 10 minutes), `ar-room-closed` |
-| `ar-room-join` | `code` | `ar-duel` for both; or `ar-err` with `no-room`, `own-room`, `locked` (`wait` in seconds). 10 wrong codes lock a player out for 5 minutes |
-| `ar-duel-score` | `q` (0–1) | none; counted once, after the start. When both are in, `ar-duel-end` |
-| `ar-duel-again` | | the other player gets `ar-duel-again { u }`; when both have asked, a new `ar-duel`. The room stays 60 s after a duel |
+| `ar-room-join` | `code` | `ar-start` (`mode` `friend`) for both; or `ar-err` with `no-room`, `own-room`, `locked` (`wait` in seconds). 10 wrong codes lock a player out for 5 minutes |
+| `ar-again` | | after a friend bout: the other player gets `ar-again { u }`; when both have asked, a new `ar-start`. The room stays 60 s after a bout |
 | `ar-cpu` | `lv` (1–3) | `ar-start` against the CPU |
-| `ar-in` | `m` (held bits), `p` (pressed since the last) | none. Bits: 1 left, 2 right, 4 up, 8 down, 16 shove, 32 sweep, 64 grab, 128 brace, 256 champion's throw, 512 dash forward, 1024 dash back. Sent as `{"t":"ar-in",…}` (that prefix, ≤ 64 bytes) it has its own allowance of 60 a second |
-| `ar-quit` | | gives the bout or duel up |
+| `ar-mv` | `m` (a move id from `rules.js` `MOVES`), `p` (its power, 0–1) | this round's move, once a round; the other player gets `ar-wait { id }`. When both are in, `ar-res` |
+| `ar-quit` | | gives the bout up |
 | `ar-board` | `k`: `global` \| `friends` | `ar-board { k, rows }`: `{ rank, u, look, rating, tier, w, l, d, streak, lvl, xp, on, me? }`; global is the top 50 (players with a bout) and you. At most one ask every 2 s |
 | `ar-history` | | `ar-history { list: [{ mode, opp, res, delta, at }] }`: your last 10 bouts |
 
-`ar-start { id, side, mode, stage, you, opp, resume? }` (`side` 0 is the left wrestler, `mode` `ranked` | `cpu`). Then every tick `ar-st { id, k, ph, rd, tm, w, f, c, ev }`: `ph` `intro` | `fight` | `ko` | `over`, `rd` the
-round, `tm` ticks left, `w` rounds won, `f` both wrestlers `[x, face, state, stateTick, balance, stamina, meter, combo,
-kind]`, `c` who holds the clinch (-1 none), `ev` this tick's events (`hit`, `sweep`, `block`, `parry`, `guard-break`,
-`grab`, `clash`, `throw`, `reversal`, `jolt`, `jolt-catch`, `escape`, `grip-swap`, `break`, `super`, `super-throw`,
-`tired`, `round`, `fight`, `ko`, `time`, `match`). At the end `ar-end { id, side, winner, reason, wins, xp, coins,
-rating? { before, after } }` (`winner` -1 a draw; `reason` `done`, `quit`, `left`).
+`ar-start { id, side, mode, you, opp, need, rd, ms, resume?, w?, chose? }` (`side` 0 or 1, `mode` `ranked` | `friend` |
+`cpu`, `need` the falls that win (2), `rd` the round, `ms` the time left to choose; after a dropped connection `resume`,
+the falls so far `w` by side and `chose`, whether this player's move is in). Each round ends with `ar-res { id, rd, m, p,
+late, r, w, ms? }`: both moves and powers by side, `late` by side (the time ran out and the server picked a random, weak
+move), `r` 1 when side 0 gained the fall, -1 side 1, 0 even, `w` the falls so far, `ms` the next round's time. At the end
+`ar-end { id, side, winner, reason, wins, xp, coins, rating? { before, after } }` (`winner` -1 a draw; `reason` `done`,
+`quit`, `left`; `rating` only for `ranked`).
 
-- **The bout:** two rounds win; a round ends when a wrestler's balance (1000) is gone or after 60 s (more balance wins).
-  At most 5 rounds, then rounds won, then damage dealt. Frame data, the clinch and the throws are in `arena-sim.js`.
-- **The duel:** `ar-duel { id, side, you, opp, skill, arrows, seed, lead, ms }`: both play the same `skill` (`timing`,
-  `hold`, `combo`, `mash`, `balance`) for `ms` (5000) after a countdown of `lead` (3000). The device reports `q`; the score
-  is `q × (0.85 + 0.15 × time left)` by the server's clock, and a missing score counts 0, 1.5 s after the end. Then
-  `ar-duel-end { id, side, winner, reason, scores, coins, xp }` (`winner` -1 a draw; `scores` 0–100 by side; `reason`
-  `done`, `quit`, `left`). `q` comes from the device and can't be checked, so a duel never touches a rating. Leaving or
-  giving up closes the room.
-- **Results:** `ranked` bouts (Elo, K 32) change both ratings and records; duels (`friend`, on the record as K 0) and CPU
+- **The bout:** first to two falls; at most 9 rounds, then the falls decide or it is a draw. A round has 25 s to choose
+  (the first 35 s, for the eagle dance). Who lets it run out falls that round (both: even); two in a row lose the bout
+  (`left`). Moves are weighed as in the village: a move that beats the other's gets 0.6, the same move 0.3, plus 0.8 × power.
+- **The CPU:** by level, its power is about 0.35, 0.55 or 0.72, and it picks a move that beats the one you use most 5%,
+  20% or 40% of the time.
+- **Results:** `ranked` bouts (Elo, K 32) change both ratings and records; friend bouts (K 0) and CPU
   spars only pay. Pay (operation `arena:<id>`, under the daily earn cap): ranked win 20 coins and 40 XP, loss 15 XP, draw
-  5 and 20; duel and CPU win 5 and 10, loss 5 XP, draw 5 XP. Rating tiers: Novice, then Falcon (Начин) 1050, Hawk (Харцага) 1150,
+  5 and 20; friend and CPU win 5 and 10, loss 5 XP, draw 5 XP. Rating tiers: Novice, then Falcon (Начин) 1050, Hawk (Харцага) 1150,
   Elephant (Заан) 1250, Garuda (Гарьд) 1350, Lion (Арслан) 1500, Titan (Аварга) 1650.
-- **A dropped connection:** the bout goes on with nothing held; back within 10 s (`ar-hello`) the player gets the bout
-  again, else it is lost (`left`).
+- **A dropped connection:** the round clock goes on; back within 10 s (`ar-hello`) the player gets the bout again,
+  else it is lost (`left`).
 - **Storage:** PostgreSQL tables `naadamy_accounts` (→ `naadamy_identities ON DELETE CASCADE`, unique `name_key`),
   `naadamy_friends`, `naadamy_arena_stats` and `naadamy_arena_matches`, made at start; JSON: `accounts.json`,
   `friends.json`, `arena.json`, `arena-matches.json` (the newest 5000 bouts) in `DATA_DIR`.
 - Matchmaking, rooms and bouts live on one server instance; accounts, friends, ratings and records are shared.
-  `ARENA_TICK_MS` (tests only) runs bouts faster.
+  `ARENA_ROUND_MS` and `ARENA_CPU_MS` (tests only) make rounds and the CPU quicker.

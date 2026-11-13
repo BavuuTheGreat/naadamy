@@ -55,13 +55,6 @@ Most of the game was first written for a web version (removed in #82); the code 
 
 The stories, questions and facts are in `Assets/Resources/Data/*.json`, and the pictures made from them (the aimag trip maps, the trip animals, Nomin, the 3D block textures, the 3D worlds in `Resources/World` and the Mongol script letters) are in `Assets/Resources`. Edit those files directly.
 
-They were first exported from the web version by `Tools/export-web-data.js` and `Tools/render-bichig.js` (the second renders the Mongol script with Microsoft Edge, because Unity can't shape it). Both read the `web/` folder, which was removed in #82. To run them again, bring that folder back for a moment and don't commit it. They write the web version's content over `Resources`, so anything changed in those files since #82 (new story chapters, for example) is lost: check `git diff unity/Assets/Resources` before committing.
-
-```
-git checkout 0338a3f~1 -- web
-node unity/Tools/export-web-data.js
-node unity/Tools/render-bichig.js
-git reset -q -- web && git checkout -- web && git clean -fdq web
-```
+They were first exported from the web version, which was removed in #82 along with the tools that exported it.
 
 `Js.cs` copies JavaScript's number rules (`Math.round`, the 32-bit `hash`, the seeded random), so the generated content still comes out exactly as the web version made it.

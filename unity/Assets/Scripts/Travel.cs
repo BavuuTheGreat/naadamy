@@ -29,7 +29,6 @@ public sealed partial class Game
         c.BlitScaled(Art.Get("folk_" + id + "_faces"), fx, fy + who["bob"][pose][frame].I, fw, fh, false, fi % 4 * fw, fi / 4 * fh, fw, fh);
         return folkArt[key] = c;
     }
-    public static PxCanvas Bolormaa(string face, string pose, int frame, bool open, bool blink) => Folk("bolormaa", face, pose, frame, open, blink);
     static readonly Dictionary<string, PxCanvas> busts = new Dictionary<string, PxCanvas>();
     /** Someone's dialogue portrait (Tools/art/bust.py): a 112×144 pixel-art head and shoulders, with the same 14 faces as Folk,
      *  talking (open) and blinking. Null for someone without one. */
@@ -42,15 +41,6 @@ public sealed partial class Game
         c = new PxCanvas(W, H); c.BlitScaled(Art.Get("bust_" + id), 0, 0, W, H, false, i % 4 * W, i / 4 * H, W, H);
         return busts[key] = c;
     }
-    /** Bolormaa standing in a scene picture at (X, Y), its top left, 60 pixels tall at scale 1. pose: wait | bye | yay. */
-    public void Nomin(PxCanvas x, float X, float Y, string pose, float scale = 1)
-    {
-        string p = pose == "bye" ? "wave" : pose == "yay" ? "cheer" : "idle", f = pose == "yay" ? "laugh" : pose == "bye" ? "wink" : "happy";
-        int fr = (int)(Time.time * (pose == "idle" || pose == "wait" ? 1.6f : 4)) % 2;
-        float h = 60 * scale, w = h * 200 / 344f;
-        x.BlitScaled(Bolormaa(f, p, fr, false, Time.time % 3.7f < 0.12f), X - (w - 27 * scale) / 2, Y, w, h);
-    }
-
     public void OpenTrip(string id, string view)
     {
         V.travelView = view; V.Save();
