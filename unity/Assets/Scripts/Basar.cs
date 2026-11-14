@@ -87,7 +87,9 @@ public static class Basar
         {
             r.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(body)); r.downloadHandler = new DownloadHandlerBuffer(); r.SetRequestHeader("content-type", "application/json"); r.timeout = 25;
             yield return r.SendWebRequest();
-            done(r.result == UnityWebRequest.Result.Success ? J.Parse(r.downloadHandler.text) : null);
+            J res = null; // a 200 that is not JSON must still finish: done(null), or the chat shows "…" forever
+            if (r.result == UnityWebRequest.Result.Success) { try { res = J.Parse(r.downloadHandler.text); } catch (Exception) { res = null; } }
+            done(res);
         }
     }
     static string Who(Game g, string lang) => $"\"lang\":{J.Quote(lang)},\"name\":{J.Quote(g.MyName)},\"age\":{g.V.age}";
@@ -244,9 +246,12 @@ public sealed partial class Game
             var topics = Basar.Topics.ToList();
             int hit = g.Chips(topics.Select(t => t.name.ToString()).ToList(), -1, 80);
             if (hit >= 0) { var tp = topics[hit].id; g.Later(() => QuizIn(g, tp)); }
-            GUILayout.Label(Loc.L("Асууж болох зүйлс:", "Try asking:"), g.sSmall);
-            var sug = Basar.Suggest.Select(s => s.ToString()).ToList(); int sh = -1; for (int i = 0; i < sug.Count; i++) if (g.Btn(sug[i], false, 34)) sh = i; // whole questions: one per line
-            if (sh >= 0) { var s = sug[sh]; g.Later(() => Send(g, s)); }
+            if (log.Count == 0) // suggestions only before the first question: otherwise they push the input row off a phone's screen
+            {
+                GUILayout.Label(Loc.L("Асууж болох зүйлс:", "Try asking:"), g.sSmall);
+                var sug = Basar.Suggest.Select(s => s.ToString()).ToList(); int sh = -1; for (int i = 0; i < sug.Count; i++) if (g.Btn(sug[i], false, 34)) sh = i; // whole questions: one per line
+                if (sh >= 0) { var s = sug[sh]; g.Later(() => Send(g, s)); }
+            }
             GUILayout.BeginHorizontal();
             GUI.SetNextControlName("basar-input");
             input = GUILayout.TextField(input, 300, new GUIStyle(g.sBtn) { alignment = TextAnchor.MiddleLeft }, GUILayout.MinHeight(g.U(40)));

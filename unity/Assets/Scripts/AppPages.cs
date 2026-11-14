@@ -472,15 +472,19 @@ public sealed partial class Game
     }
     public sealed class ConfirmModal : Modal
     {
-        readonly string title, text; readonly Action yes; public Action onNo;
+        readonly string title, text; readonly Action yes; public Action onNo; bool answered;
         public ConfirmModal(string title, string text, Action yes) { this.title = title; this.text = text; this.yes = yes; }
         public override void Draw(Game g)
         {
             g.Title(title); g.Small(text);
             GUILayout.BeginHorizontal();
-            if (g.Btn(Loc.L("Болих", "Cancel"))) g.Later(() => { g.Close(); onNo?.Invoke(); });
-            if (g.Btn(Loc.L("Тийм", "Yes"), true)) g.Later(() => { g.Close(); yes(); });
+            if (g.Btn(Loc.L("Болих", "Cancel"))) g.Later(() => { answered = true; g.Close(); onNo?.Invoke(); });
+            if (g.Btn(Loc.L("Тийм", "Yes"), true)) g.Later(() => { answered = true; g.Close(); yes(); });
             GUILayout.EndHorizontal();
+        }
+        public override void Closed(Game g) // tapped outside: the inviter still hears "no"
+        {
+            if (!answered) onNo?.Invoke();
         }
     }
 
@@ -705,6 +709,7 @@ public sealed partial class Game
 #else
             int pos = 0; recording = false;
 #endif
+            if (pos <= 0 && rec != null && Time.time - recStart > 299f) pos = rec.samples; // a take that hit the 300 s cap stopped itself: GetPosition reads 0, the clip is all there
             if (rec != null && pos > 0) { samples = new float[pos * rec.channels]; rec.GetData(samples, 0); status = "√"; }
         }
         void Save(Game g)

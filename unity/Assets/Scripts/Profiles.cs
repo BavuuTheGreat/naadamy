@@ -67,9 +67,10 @@ public sealed partial class Game
         V = p; App.activeId = p.id; App.loggedIn = true; App.Save();
         bool okPos = V.hasPos && !World.Blocked(Mathf.FloorToInt(V.posX + 0.5f), Mathf.FloorToInt(V.posY + 0.82f));
         px = okPos ? V.posX : 17; py = okPos ? V.posY : 13; vx = vy = 0; path.Clear(); pending = null; riding = false; race = null;
+        battle = null; p2 = null; dialog = null; gbOn = false; gbHold = null; // nothing of the last player's battle, friend or dialog carries over
         mx = Mathf.FloorToInt(px + 0.5f); my = Mathf.FloorToInt(py + 0.82f); camPos = new Vector2(px, py); petPos = new Vector2(px, py + 0.6f); dgx = px + 0.7f; dgy = py + 0.2f;
         Basar.history.Clear();
-        CloseAll(); Quests(); Sfx.Win(); net.Close();   // nothing connects until the player picks multiplayer (ModeModal)
+        CloseAll(); Quests(); Sfx.Win(); net.Close(); net.ResetAccount();   // nothing connects until the player picks multiplayer (ModeModal)
         Action proceed = () =>
         {
             if (string.IsNullOrEmpty(p.eth)) { Open(new ModeModal(() => Open(new CreatePage(true)))); return; } // new: pick how to play, then build your character (ethnic group, home province, outfit)
@@ -86,7 +87,7 @@ public sealed partial class Game
         }
         proceed();
     }
-    public void LogOut() { Family.pin = ""; net.SaveAlone(this); net.Close(); if (V != null) { SavePos(); V.Save(); } App.loggedIn = false; App.Save(); CloseAll(); V = null; Open(new AuthPage()); }
+    public void LogOut() { Family.pin = ""; net.SaveAlone(this); net.ResetAccount(); net.Close(); if (V != null) { SavePos(); V.Save(); } App.loggedIn = false; App.Save(); CloseAll(); V = null; Open(new AuthPage()); }
 
     /** Grown-ups only: the device's grown-up PIN. Before there is one, a family device asks for the family's PIN (check-pin);
      *  any other device (or one that can't reach the server) has a grown-up type a number written in words (hard for a little
@@ -437,9 +438,11 @@ public sealed partial class Game
             g.MuteButton(new Rect(er.x - g.U(46), er.y - g.U(2), g.U(40), g.U(40)));
             GUILayout.BeginArea(new Rect(safe.x + (safe.width - w) / 2, top + g.U(16), w, safe.height - g.U(32)));
             GUILayout.FlexibleSpace();
-            var lr = GUILayoutUtility.GetRect(w, g.U(72)); g.Logo(new Rect(lr.center.x - g.U(36), lr.y, g.U(72), g.U(72)));
+            // a phone in landscape (under 600 units high): no room for the logo and big title, so the form gets their height
+            bool cramped = safe.height / g.UiScale < 600;
+            if (!cramped) { var lr = GUILayoutUtility.GetRect(w, g.U(72)); g.Logo(new Rect(lr.center.x - g.U(36), lr.y, g.U(72), g.U(72))); }
             void Shadowed(string text, GUIStyle st, float h) { var r = GUILayoutUtility.GetRect(w, g.U(h)); var sh = new GUIStyle(st) { normal = { textColor = new Color(0.17f, 0.12f, 0.18f, 0.55f) } }; GUI.Label(new Rect(r.x, r.y + g.U(2), r.width, r.height), text, sh); GUI.Label(r, text, st); }
-            Shadowed("Naadamy", new GUIStyle(g.sBig) { fontSize = Mathf.RoundToInt(g.U(46)), normal = { textColor = Color.white } }, 56);
+            if (!cramped) Shadowed("Naadamy", new GUIStyle(g.sBig) { fontSize = Mathf.RoundToInt(g.U(46)), normal = { textColor = Color.white } }, 56);
             Shadowed(Loc.L("Монгол өв соёлоо гэр бүл, найзуудтайгаа хамт сурцгаая", "Learn Mongolian heritage together with family and friends"), new GUIStyle(g.sCenter) { fontSize = Mathf.RoundToInt(g.U(14)), normal = { textColor = Color.white } }, 22);
             g.Gap(12);
             GUILayout.BeginHorizontal();
@@ -449,7 +452,7 @@ public sealed partial class Game
             GUILayout.EndHorizontal();
             g.Gap(10);
             GUILayout.BeginVertical(g.sPanel);
-            scroll = g.BeginScroll(scroll, safe.height - g.U(330)); // whatever is left under the header; the rest scrolls
+            scroll = g.BeginScroll(scroll, safe.height - g.U(cramped ? 192 : 330)); // whatever is left under the header; the rest scrolls
             if (tab == "login") LogIn(g); else Register(g);
             g.EndScroll();
             GUILayout.EndVertical();

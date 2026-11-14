@@ -32,7 +32,7 @@ public sealed partial class Game
     void MoveP2(float dt)
     {
         var p = p2; if (p == null) return;
-        if (P2Busy) { p.hidden = true; p.vx = p.vy = 0; p.moving = false; return; }
+        if (P2Busy) { p.hidden = true; p.vx = p.vy = 0; p.moving = false; p.stick = Vector2.zero; p.stickId = -99; return; } // a window ate the lift: drop the stick too
         if (p.hidden) { var at = BesideMe(); p.px = at.x; p.py = at.y; p.hidden = false; }
         float ix = (Input.GetKey(KeyCode.RightArrow) ? 1 : 0) - (Input.GetKey(KeyCode.LeftArrow) ? 1 : 0), iy = (Input.GetKey(KeyCode.DownArrow) ? 1 : 0) - (Input.GetKey(KeyCode.UpArrow) ? 1 : 0), mag = 1, tvx = 0, tvy = 0;
         float sm = p.stick.magnitude; if (ix == 0 && iy == 0 && sm > 0.18f) { ix = p.stick.x; iy = p.stick.y; mag = Mathf.Clamp((sm - 0.18f) / 0.45f, 0.45f, 1); }

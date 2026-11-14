@@ -188,7 +188,7 @@ public sealed partial class Game : MonoBehaviour
     void KeysInWorld()
     {
         if (dialog != null && dialog.choices == null && (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.E))) { DialogNext(); return; }
-        if (Input.GetKeyDown(KeyCode.Space)) Jump();
+        if (Input.GetKeyDown(KeyCode.Space) || jumpHeld && dialog == null) Jump(); // holding the Jump button keeps hopping (Jump has its own pause)
         if (Input.GetKeyDown(KeyCode.B) && race == null && battle == null) OpenBasar();
         if (race != null) return; // no shops or menus in the middle of a race
         if (battle != null && Input.GetKeyDown(KeyCode.F)) ShootNearest();
@@ -222,7 +222,7 @@ public sealed partial class Game : MonoBehaviour
     {
         bool block = modal != null, counting = race != null && race.phase == "count";
         float ix = block || counting ? 0 : KeyX(), iy = block || counting ? 0 : KeyY(), mag = 1;
-        bool wantRun = !block && race == null && (ShiftHeld || runLock) && (ix != 0 || iy != 0 || stickOn || path.Count > 0);
+        bool wantRun = !block && race == null && (ShiftHeld || runLock || runHeld) && (ix != 0 || iy != 0 || stickOn || path.Count > 0);
         if (wantRun && V.energy <= 0 && !tiredSaid) { tiredSaid = true; Toast(Loc.L("Ядарчихлаа! Хоол идэж, ундаа уугаад хүчээ нөхөөрэй.", "Out of energy! Eat or drink to get it back."), "hungry"); }
         running = wantRun && V.energy > 0;
         float SP = riding ? (race != null ? RaceSpeed() : running ? 11 : 7.2f) : running ? RUN_SPEED : SPEED, tvx = 0, tvy = 0;

@@ -12,6 +12,24 @@ public sealed partial class Game
     sealed class Drag { public int id; public Vector2 p0, p; public bool on; }
     Drag drag; Vector2 stick; bool stickOn, runLock, sprintHeld; float lastTouch = -9, guiOX, guiOY;
     Rect sprintRect;
+    // buttons you hold (run, jump): any finger on one counts, so one thumb steers with the joystick while another finger holds the button.
+    // IMGUI's own buttons only see the first finger, which is why these read the touches themselves (like the race's sprintRect)
+    Rect runRect, jumpRect; int runRectF = -9, jumpRectF = -9; public bool runHeld, jumpHeld;
+    bool RectHeld(Rect r, int frame)
+    {
+        if (r.width <= 0 || Time.frameCount - frame > 1) return false; // not drawn this frame: a rect left over from another screen holds nothing
+        for (int i = 0; i < Input.touchCount; i++) { var tp = Input.GetTouch(i).position; if (r.Contains(new Vector2(tp.x, Screen.height - tp.y))) return true; }
+        return Input.touchCount == 0 && Input.GetMouseButton(0) && r.Contains(new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y));
+    }
+    /** Marks r as this frame's hold-to-run (or hold-to-jump) button and says whether it is held; with a text it draws the button too, pressed while held. */
+    public bool Hold(Rect r, bool jump, string text = null, GUIStyle st = null)
+    {
+        Ui(r); var sr = new Rect(r.x + guiOX, r.y + guiOY, r.width, r.height);
+        if (jump) { jumpRect = sr; jumpRectF = Time.frameCount; } else { runRect = sr; runRectF = Time.frameCount; }
+        bool held = jump ? jumpHeld : runHeld;
+        if (text != null) { st ??= sBtn; GUI.Box(r, text, Fit(held ? new GUIStyle(st) { normal = st.active } : st, text, r.width)); }
+        return held;
+    }
     List<Rect> uiRects = new List<Rect>(), uiNext = new List<Rect>();
 
     bool OverUI(Vector2 screen) { var g = new Vector2(screen.x, Screen.height - screen.y); foreach (var r in uiRects) if (r.Contains(g)) return true; return false; }
@@ -31,6 +49,7 @@ public sealed partial class Game
             for (int i = 0; i < Input.touchCount; i++) { var tp = Input.GetTouch(i).position; if (sprintRect.Contains(new Vector2(tp.x, Screen.height - tp.y))) sprintHeld = true; }
             if (Input.touchCount == 0 && Input.GetMouseButton(0) && sprintRect.Contains(new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y))) sprintHeld = true;
         }
+        runHeld = RectHeld(runRect, runRectF); jumpHeld = RectHeld(jumpRect, jumpRectF);
         if (drag != null && drag.id >= 0 && Input.touchCount == 0) drag = null; // a lift lost to a full-screen window must not leave the stick held
         stickOn = drag != null && drag.on;
         if (stickOn)
@@ -207,8 +226,9 @@ public sealed partial class Game
      *  least `css` CSS pixels on the screen. On a computer it is just `units`. */
     public float AtLeastCss(float units, float css) => Mathf.Max(units, css * Dpr / UiScale);
     public float StickR => Mathf.Max(STICK_R * UiScale, 62 * Dpr); // a thumb-sized ring on a phone, however small the layout is
-    /** The joystick's fixed centre in GUI pixels (y down): bottom left, right of the village's button column; lift raises it over a scene's bottom row. */
-    public Vector2 StickHome(float lift = 0) => new Vector2(U(130) + StickR, Screen.height - U(14 + lift) - StickR);
+    /** The joystick's fixed centre in GUI pixels (y down): bottom left, right of the village's button column; lift raises it over a scene's bottom row.
+     *  Inside the safe area, as the buttons are: a notch on the left or the home bar below would otherwise put it under the button column and off the edge. */
+    public Vector2 StickHome(float lift = 0) { var sa = Screen.safeArea; return new Vector2(sa.x + U(130) + StickR, Screen.height - sa.y - U(14 + lift) - StickR); }
     /** A finger landing here takes the joystick: a little wider than the ring, so a thumb need not aim. */
     public bool NearStick(Vector2 gui, float lift = 0) => (gui - StickHome(lift)).magnitude < StickR * 1.5f;
     /** Where a finger at gui pushes the joystick: -1..1 on each axis, y down as GUI y. */
@@ -225,14 +245,15 @@ public sealed partial class Game
     }
     Rect UR(float x, float y, float w, float h) => new Rect(U(x), U(y), U(w), U(h));
     void Ui(Rect r) { if (Event.current.type == EventType.Repaint) uiNext.Add(r); }
-    bool Button(Rect r, string text, GUIStyle st = null) { Ui(r); st ??= sBtn; return GUI.Button(r, text, Fit(st, text, r.width)); }
+    bool Button(Rect r, string text, GUIStyle st = null) { Ui(r); st ??= sBtn; return GUI.Button(r, text, Fit(st, text, r.width, r.height)); }
     readonly Dictionary<(Font, int, int, string, int), int> fitCache = new Dictionary<(Font, int, int, string, int), int>();
     /** The style for a text in a box w wide that never breaks a word in two ("Алгаса / х"): when the longest word
-     *  doesn't fit on one line, the font shrinks (to 55% at most) until it does. The same style when it already fits. */
-    public GUIStyle Fit(GUIStyle st, string text, float w)
+     *  doesn't fit on one line, the font shrinks (to 55% at most) until it does. The same style when it already fits.
+     *  With a height h (a box of a fixed size), it also shrinks while the wrapped lines are taller than the box, so they don't spill out of it. */
+    public GUIStyle Fit(GUIStyle st, string text, float w, float h = 0)
     {
         if (string.IsNullOrEmpty(text) || st == null || st.fontSize <= 0) return st;
-        var key = (st.font, st.fontSize, st.padding.horizontal, text, Mathf.RoundToInt(w)); // by value: callers often pass a new style each frame
+        var key = (st.font, st.fontSize, st.padding.horizontal, text, Mathf.RoundToInt(w) + 100000 * Mathf.RoundToInt(h)); // by value: callers often pass a new style each frame
         if (!fitCache.TryGetValue(key, out int size))
         {
             if (fitCache.Count > 1024) fitCache.Clear(); // the texts change with the language and the screen size
@@ -242,6 +263,12 @@ public sealed partial class Game
             float Widest(int fs) { one.fontSize = fs; return words.Length == 0 ? 0 : words.Max(x => one.CalcSize(new GUIContent(x)).x); }
             size = st.fontSize; int min = Mathf.Max(8, Mathf.RoundToInt(st.fontSize * 0.55f));
             while (size > min && Widest(size) > room) size--;
+            if (h > 0 && st.wordWrap && room > 0)
+            {
+                var tall = new GUIStyle(st) { padding = new RectOffset() }; var gc = new GUIContent(text); // measured without the padding: one line in a low button is fine as it is
+                float High(int fs) { tall.fontSize = fs; return tall.CalcHeight(gc, room); }
+                while (size > min && High(size) > h) size--;
+            }
             fitCache[key] = size;
         }
         return size == st.fontSize ? st : new GUIStyle(st) { fontSize = size };
@@ -641,8 +668,10 @@ public sealed partial class Game
             if (!TouchUI) { var kr = new Rect(ar.center.x - U(9), ar.y + U(64), U(18), U(14)); Box(kr, Px.Col("#8a4b1f")); GUI.Label(kr, "E", new GUIStyle(small) { fontSize = Mathf.RoundToInt(U(9)), alignment = TextAnchor.MiddleCenter, normal = { textColor = Color.white } }); }
             right -= aw + 8;
         }
-        var jr = UR(right - 56, vh - 12 - 56, 56, 56); if (Round(jr, null)) Jump(); GUI.Label(new Rect(jr.x, jr.y, jr.width, jr.height - U(4)), "↑", new GUIStyle(sBig) { fontSize = Mathf.RoundToInt(U(28)), normal = { textColor = Px.Col("#4a2a12") } }); GlowAt("jump", jr); right -= 64;
-        var rr = UR(right - 56, vh - 12 - 56, 56, 56); if (Round(rr, Emo.Icon("🏃"), null, runLock ? sSel : sChip)) runLock = !runLock; GlowAt("run", rr); right -= 64;
+        var jr = UR(right - 56, vh - 12 - 56, 56, 56); Round(jr, null, null, Hold(jr, true) ? sSel : sChip); GUI.Label(new Rect(jr.x, jr.y, jr.width, jr.height - U(4)), "↑", new GUIStyle(sBig) { fontSize = Mathf.RoundToInt(U(28)), normal = { textColor = Px.Col("#4a2a12") } }); GlowAt("jump", jr); right -= 64;
+        var rr = UR(right - 56, vh - 12 - 56, 56, 56); // on a phone Run is held (with the other thumb on the joystick); with a mouse it stays a switch, since the keyboard has Shift to hold
+        if (TouchUI) Round(rr, Emo.Icon("🏃"), null, Hold(rr, false) ? sSel : sChip); else if (Round(rr, Emo.Icon("🏃"), null, runLock ? sSel : sChip)) runLock = !runLock;
+        GlowAt("run", rr); right -= 64;
         // Basar's fact: its own card, bottom right above the button bar (the tallest button is 86 high), slides in from the right edge, out again after 12 s; a tap opens him
         if (dogBubble != null && modal == null)
         {
@@ -711,11 +740,14 @@ public sealed partial class Game
         // a tap on the dimmed village outside the window closes it, as the ✕ does
         var e = Event.current;
         if (modal.CanEscape && e.type == EventType.MouseDown && modalPanel.width > 0 && !modalPanel.Contains(e.mousePosition)) { e.Use(); Later(Close); return; }
-        float w = Mathf.Min(U(modal.Width), Screen.width - U(24)), h = Screen.height - U(24);
-        GUILayout.BeginArea(new Rect((Screen.width - w) / 2, U(12), w, h));
+        // inside the safe area: a wide or tall window must not go under a phone's notch or home bar
+        var sa = Screen.safeArea; float ax = sa.x, ay = Screen.height - sa.yMax;
+        float w = Mathf.Min(U(modal.Width), sa.width - U(24)), h = sa.height - U(24);
+        ax += (sa.width - w) / 2; ay += U(12);
+        GUILayout.BeginArea(new Rect(ax, ay, w, h));
         GUILayout.FlexibleSpace();
         GUILayout.BeginVertical(sPanel);
-        var m = modal; m.winScroll = BeginScroll(m.winScroll, h - U(40));
+        var m = modal; m.winScroll = BeginScroll(m.winScroll, h - U(60)); // the panel's own padding is 56: less room than this and its bottom frame is cut off
         var sp = m.Speaker; PxCanvas port = sp != null ? Portrait(sp.Value.who, sp.Value.face, spWho == sp.Value.who && Time.time - spAt < 1.6f && (int)(Time.time * 9) % 2 == 0, (Time.time + sp.Value.who.Length) % 3.4f < 0.12f) : null;
         if (port != null)   // the one you are talking to, in a portrait at the window's left
         {
@@ -729,7 +761,7 @@ public sealed partial class Game
         if (port != null) { GUILayout.EndVertical(); GUILayout.EndHorizontal(); }
         EndScroll();
         GUILayout.EndVertical();
-        if (e.type == EventType.Repaint) { var pr = GUILayoutUtility.GetLastRect(); modalPanel = new Rect(pr.x + (Screen.width - w) / 2, pr.y + U(12), pr.width, pr.height); }
+        if (e.type == EventType.Repaint) { var pr = GUILayoutUtility.GetLastRect(); modalPanel = new Rect(pr.x + ax, pr.y + ay, pr.width, pr.height); }
         GUILayout.FlexibleSpace();
         GUILayout.EndArea();
         if (m.CanEscape && modalPanel.width > 0 && GUI.Button(new Rect(modalPanel.xMax - U(44), modalPanel.y + U(10), U(34), U(34)), "×", sBtn)) Later(() => { if (modal == m) Close(); });
@@ -938,8 +970,15 @@ public sealed partial class Game
         // three to a row on one line each: pixel letters are wide, and wrapped chips spill over each other
         int hit = -1; GUILayout.BeginHorizontal(); GUIStyle on = new GUIStyle(tabs ? sPrimary : sSel) { wordWrap = false }, off = new GUIStyle(sBtn) { wordWrap = false }; // tabs fill orange, a picked option gets a red outline
         float w = U(minW); foreach (var l in labels) w = Mathf.Max(w, off.CalcSize(new GUIContent(l)).x); // all as wide as the widest, so the rows line up
-        for (int i = 0; i < labels.Count; i++) { if (i > 0 && i % 3 == 0) { GUILayout.EndHorizontal(); GUILayout.BeginHorizontal(); } if (GUILayout.Button(labels[i], i == current ? on : off, GUILayout.MinWidth(w), GUILayout.MinHeight(U(36)))) hit = i; }
-        if (labels.Count > 3) for (int i = labels.Count % 3; i > 0 && i < 3; i++) GUILayoutUtility.GetRect(w, U(36), GUILayout.ExpandWidth(true)); // a short last row keeps the same chip width
+        // in a window, fewer to a row when three of the widest don't fit its width (long topic names were cut off at the right)
+        int cols = 3;
+        if (modal != null && !modal.FullScreen)
+        {
+            float room = Mathf.Min(U(modal.Width), Screen.safeArea.width - U(24)) - sPanel.padding.horizontal - (modal.Speaker != null ? U(116) : 0);
+            cols = Mathf.Clamp(Mathf.FloorToInt(room / (w + off.margin.horizontal)), 1, 3);
+        }
+        for (int i = 0; i < labels.Count; i++) { if (i > 0 && i % cols == 0) { GUILayout.EndHorizontal(); GUILayout.BeginHorizontal(); } if (GUILayout.Button(labels[i], i == current ? on : off, GUILayout.MinWidth(w), GUILayout.MinHeight(U(36)))) hit = i; }
+        if (labels.Count > cols) for (int i = labels.Count % cols; i > 0 && i < cols; i++) GUILayoutUtility.GetRect(w, U(36), GUILayout.ExpandWidth(true)); // a short last row keeps the same chip width
         GUILayout.EndHorizontal(); return hit;
     }
     public bool Swatch(Color c, bool on, float size = 36)
