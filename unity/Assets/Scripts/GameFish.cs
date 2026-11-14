@@ -72,7 +72,7 @@ public sealed partial class Game
             g.Box(meter, Px.Col("#2b1e2e")); var mi = new Rect(meter.x + g.U(2), meter.y + g.U(2), meter.width - g.U(4), meter.height - g.U(4));
             g.Box(new Rect(mi.x, mi.yMax - prog * mi.height, mi.width, prog * mi.height), Px.Col("#f7c646"));
             g.Gap();
-            if (GUILayout.RepeatButton(Loc.L("Дарж барь (Space)", "Press & hold (Space)"), g.sPrimary, GUILayout.MinHeight(g.U(56)))) holdFrame = Time.frameCount;
+            bool pressHeld = GUILayout.RepeatButton(Loc.L("Дарж барь (Space)", "Press & hold (Space)"), g.sPrimary, GUILayout.MinHeight(g.U(56))); g.DrawingAt(GUILayoutUtility.GetLastRect()); if (pressHeld) holdFrame = Time.frameCount;
             if (g.Btn(Loc.L("Хаах", "Close"), false, 30)) g.Later(g.Close);
         }
     }

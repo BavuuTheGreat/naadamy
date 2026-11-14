@@ -99,7 +99,7 @@ public sealed partial class Game
         if (achShow == null) return;
         float age = Time.time - achT; if (age > 3.6f) { achShow = null; return; }
         float slide = Mathf.Clamp01(age / 0.3f) * Mathf.Clamp01((3.6f - age) / 0.3f);
-        float lw = U(300) - U(84); var s1 = new GUIStyle(sChipText) { fontSize = PxSize(U(11f) * 1.3f) }; var s2 = new GUIStyle(sChipText) { wordWrap = true }; var nm = "<b>" + achShow.name + "</b>";
+        float lw = U(300) - U(84); var s1 = new GUIStyle(sChipText) { fontSize = PxSize(U(11f) * 1.3f), normal = { textColor = Color.white } }; var s2 = new GUIStyle(sChipText) { wordWrap = true, normal = { textColor = Px.Col("#f7c646") } }; var nm = "<b>" + achShow.name + "</b>"; // dark ink on the dark toast was unreadable: white title, gold name
         float h1 = s1.CalcHeight(new GUIContent("Ag"), lw), h2 = s2.CalcHeight(new GUIContent(nm), lw); // the pixel font's lines are tall: size the card to its text
         var r = new Rect(Screen.width / 2f - U(150), U(8) - (1 - slide) * U(90), U(300), Mathf.Max(U(70), h1 + h2 + U(16))); GUI.Box(r, "", sToast);
         GUI.DrawTexture(new Rect(r.x + U(8), r.center.y - U(30), U(60), U(60)), Tex(Emo.Badge(achShow.emblem, achShow.cat)));

@@ -55,7 +55,7 @@ public sealed partial class Game
     };
     static readonly Dictionary<string, Tx> PART = new Dictionary<string, Tx>
     {
-        ["khana"] = T2("хана", "wall lattices"), ["khaalga"] = T2("хаалга", "a door"), ["toono"] = T2("тооно", "a toono"), ["bagana"] = T2("багана", "posts"), ["uni"] = T2("унь", "roof poles"),
+        ["khana"] = T2("хана", "walls"), ["khaalga"] = T2("хаалга", "a door"), ["toono"] = T2("тооно", "a toono"), ["bagana"] = T2("багана", "posts"), ["uni"] = T2("унь", "roof poles"),
         ["esgii"] = T2("эсгий", "felt"), ["buurees"] = T2("бүрээс", "a cover"), ["buslvvr"] = T2("бүслүүр", "ropes"),
     };
     public static string PartName(string k) => PART.TryGetValue(k, out var t) ? t.ToString() : k;
@@ -134,7 +134,7 @@ public sealed partial class Game
         if (net.Online)
         {
             bool mine = net.lots != null && net.lots.Any(l => l != null && l.by == V.id);
-            if (first || !mine) net.GerClaim(V.lot.i, V.lot.roof, V.lot.door, G.stage); else net.GerStage(G.stage);
+            if (first || !mine) { net.GerClaim(V.lot.i, V.lot.roof, V.lot.door, G.stage); for (int s = 2; s <= G.stage; s++) net.GerStage(s); } else net.GerStage(G.stage); // a claim lands at stage 1: send the rest in order
         }
         V.Save();
     }
@@ -143,10 +143,10 @@ public sealed partial class Game
     {
         int stage = MyStage; if (stage < 1 || V.lot.i < 0 || !net.Online || net.lots == null) return;
         int at = Array.FindIndex(net.lots, l => l != null && l.by == V.id);
-        if (at >= 0) { V.lot.i = at; if ((net.lots[at].stage > 0 ? net.lots[at].stage : GerRules.DONE) < stage) net.GerStage(stage); V.Save(); return; }
+        if (at >= 0) { V.lot.i = at; int srv = net.lots[at].stage > 0 ? net.lots[at].stage : GerRules.DONE; for (int s = srv + 1; s <= stage; s++) net.GerStage(s); /* the server takes one stage at a time */ V.Save(); return; }
         int i = net.lots.Length > V.lot.i && net.lots[V.lot.i] == null ? V.lot.i : Array.FindIndex(net.lots, l => l == null);
         if (i < 0) { Toast(Loc.L("Энэ өрөөнд сул газар алга. Гэр чинь зөвхөн чамд харагдана.", "No free plot in this room. Your ger shows only for you.")); return; }
-        V.lot.i = i; V.Save(); net.GerClaim(i, V.lot.roof, V.lot.door, stage);
+        V.lot.i = i; V.Save(); net.GerClaim(i, V.lot.roof, V.lot.door, stage); for (int s = 2; s <= stage; s++) net.GerStage(s); // the claim starts at stage 1; the server takes the rest one by one
     }
     void LotAction(int i)
     {

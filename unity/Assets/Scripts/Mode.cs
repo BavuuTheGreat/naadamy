@@ -39,6 +39,6 @@ public sealed partial class Game
             if (picked >= 0) { int k = picked; g.Later(() => { g.SetPlayMode(k == 1); Sfx.Chime(); g.Close(); after?.Invoke(); if (k == 1 && after == null) g.Open(new RoomModal()); g.Toast(k == 1 ? Loc.L("Сервертэй холбогдож байна…", "Connecting to the server…") : Loc.L("Ганцаараа тоглож байна", "Playing solo")); }); }
             if (multi && g.net.Online && g.Btn(Loc.L("Өрөө, чат", "Room and chat"), false, 36)) g.Later(() => g.Swap(new RoomModal()));
         }
-        public override void Press(Game g) => g.Close();
+        public override void Press(Game g) { if (after == null) g.Close(); } // a new player must build their character first
     }
 }

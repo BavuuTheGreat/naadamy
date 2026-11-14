@@ -401,7 +401,7 @@ public sealed partial class Game
             var st = new GUIStyle(g.sLabel) { fontSize = Mathf.RoundToInt(U * Game.TALK), wordWrap = true, normal = { textColor = new Color(1, 0.97f, 0.9f) } };
             float th = st.CalcHeight(new GUIContent(l.text), tw * U) / U, n = l.choices?.Length ?? 0, oht = 0;
             for (int i = 0; i < n; i++) oht += Mathf.Max(38, g.sOpt.CalcHeight(new GUIContent(l.choices[i]), tw * U) / U) + 6; // an answer grows to fit its words
-            float h = Mathf.Max(pic * 0.72f + pad, pad + 26 + th + (n > 0 ? 10 + oht : 20) + pad), x = vw / 2 - w / 2, y = vh - h - 10;
+            float h = Mathf.Min(Mathf.Max(pic * 0.72f + pad, pad + 26 + th + (n > 0 ? 10 + oht : 20) + pad), vh - 80), x = vw / 2 - w / 2, y = vh - h - 10; // capped: long text and choices must not push the box off the top
             // a dark box with a gold frame; the portrait stands on its left, a little taller than the box
             g.Box(g.URect(x - 2, y - 2, w + 4, h + 4), Px.Col("#e0b04a")); g.Box(g.URect(x, y, w, h), new Color(0.04f, 0.03f, 0.07f, 0.94f));
             // the story_face sheet's mouth-open and blink cells draw the head at slightly different pixel offsets than the base cell, so toggling creates a ghost that reads as an extra mouth / extra pair of eyes (same bug the dialog bust had). Freeze the face at the closed-mouth cell until the sheet is re-authored with pixel-perfect head placement across all three cells.
@@ -431,7 +431,7 @@ public sealed partial class Game
         {
             float w = Mathf.Min(vw - 40, 520), U = g.UiScale;
             var st = new GUIStyle(g.sLabel) { fontSize = Mathf.RoundToInt(U * 16), wordWrap = true };
-            float th = st.CalcHeight(new GUIContent(cardText), (w - 40) * U) / U, h = th + 110, x = vw / 2 - w / 2, y = vh / 2 - h / 2;
+            float th = st.CalcHeight(new GUIContent(cardText), (w - 40) * U) / U, h = Mathf.Min(th + 110, vh - 16), x = vw / 2 - w / 2, y = vh / 2 - h / 2;
             g.Box(g.URect(0, 0, vw, vh), new Color(0, 0, 0, 0.45f));
             GUI.Box(g.URect(x, y, w, h), GUIContent.none, g.sPanel);
             GUI.Label(g.URect(x + 20, y + 18, w - 40, 28), "<b>" + cardTitle + "</b>", new GUIStyle(g.sTitle) { fontSize = Mathf.RoundToInt(U * 20) });
