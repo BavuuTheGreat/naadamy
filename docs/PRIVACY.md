@@ -5,7 +5,7 @@ Effective date: 15 November 2026
 Naadamy is a game for children and families to learn Mongolian heritage together. This policy explains what data the
 Naadamy app and its server collect, why, who else handles it, and how to delete it.
 
-Contact: **[CONTACT EMAIL]**
+Contact: **naro.tech123@gmail.com**
 
 ## Data we collect
 
