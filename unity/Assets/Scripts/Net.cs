@@ -287,7 +287,8 @@ public sealed class Net
                 }
                 if (m["position"] != null && !m["position"].IsNull && g.V != null)
                 {
-                    try { float pxv = m["position"]["x"].F; float pyv = m["position"]["y"].F; if (pxv >= 0.5f && pxv <= Rules.W - 2 && pyv >= 0.5f && pyv <= Rules.H - 2) { g.V.posX = pxv; g.V.posY = pyv; g.V.hasPos = true; } } catch (Exception) { }
+                    // the live player moves there too (CorrectMove also saves it); writing only V was overwritten by the next SavePos
+                    try { float pxv = m["position"]["x"].F; float pyv = m["position"]["y"].F; int pdir = m["position"]["dir"].I; if (pxv >= 0.5f && pxv <= Rules.W - 2 && pyv >= 0.5f && pyv <= Rules.H - 2) g.CorrectMove(pxv, pyv, pdir); } catch (Exception) { }
                 }
                 g.GerSync(); // my ger, started while playing alone, comes along to a free plot
                 Sync(g);
@@ -431,9 +432,11 @@ public sealed class Net
         string fields = SyncFields(V), cloud = Cloud.Of(V); bool cloudNew = cloud != cloudSent;
         if (fields == null && !cloudNew) return;
         string body = "{" + Obj("id", V.id, "ticket", V.ticket) + (fields != null ? "," + fields : "") + (cloudNew ? "," + Raw("cloud", cloud) : "") + "}";
+        string pid = V.id; // the answer is for this profile: if another one is on by then, it is dropped
         saving = true; if (fields != null) { syncing = true; syncSentAt = Time.realtimeSinceStartup; }
         g.StartCoroutine(ArenaApi.Post(server, body, r =>
         {
+            if (g.V == null || g.V.id != pid) { saving = syncing = false; return; }
             saving = false; syncing = false;
             if (!r["ok"].B) return;
             if (cloudNew) cloudSent = cloud;
@@ -441,6 +444,8 @@ public sealed class Net
             foreach (var m in r["out"]) Handle(g, m);
         }, "/api/save"));
     }
+    /** A profile is switched to (or logged out of): the last one's wallet revision, day and cloud copy mean nothing for the next. */
+    public void ResetAccount() { walletRev = -1; capDay = ""; serverDay = ""; cloudSent = ""; syncing = saving = false; }
     /** Take a server wallet while keeping what this device has not uploaded yet. `ac`/`ax`: what an upload just added. An older wallet than one
      *  already seen only takes that off. */
     void ApplyWallet(Game g, J w, int ac = 0, int ax = 0)
@@ -469,7 +474,7 @@ public sealed partial class Game
 {
     public readonly Net net = new Net();
     public float MyX => px; public float MyY => py; public int MyDir => dir; public bool MyRiding => riding;
-    public void CorrectMove(float x, float y, int d) { px = x; py = y; dir = d; vx = vy = 0; SavePos(); } // the server put me back where it says I am
+    public void CorrectMove(float x, float y, int d) { px = x; py = y; dir = d; vx = vy = 0; path.Clear(); pending = null; SavePos(); } // the server put me back where it says I am (an old walk to a tap is dropped)
     (string text, PxCanvas icon, float t) myBubble = (null, null, -99);
     public void MyBubble(string text, PxCanvas icon) => myBubble = (text, icon, Time.time);
     /** A lot someone else owns on the server (their ger stands there). */

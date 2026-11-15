@@ -366,6 +366,19 @@ public sealed partial class Game
         public override void Closed(Game g)
         {
             Cursor.lockState = CursorLockMode.None; Cursor.visible = true;
+            // left while standing in a ger or on a lot: every 2D step from a blocked tile is refused, so step out to the nearest free tile first
+            if (src.village && !Game.FreeAt(g.px + 0.5f, g.py + 0.82f))
+            {
+                int fx0 = Mathf.FloorToInt(g.px + 0.5f), fy0 = Mathf.FloorToInt(g.py + 0.82f), ftx = fx0, fty = fy0; bool found = false;
+                var door = World.ObjAt(fx0, fy0); // the ger's own door is the way out
+                if (door != null && door.hasDoor && Game.FreeAt(door.doorX + 0.5f, door.doorY + 0.82f)) { ftx = door.doorX; fty = door.doorY; found = true; }
+                for (int r = 1; r <= 8 && !found; r++) for (int dy = -r; dy <= r && !found; dy++) for (int dx = -r; dx <= r && !found; dx++)
+                {
+                    if (Math.Abs(dx) != r && Math.Abs(dy) != r) continue; // only the ring at radius r
+                    if (Game.FreeAt(fx0 + dx + 0.5f, fy0 + dy + 0.82f)) { ftx = fx0 + dx; fty = fy0 + dy; found = true; }
+                }
+                if (found) { g.px = ftx; g.py = fty; g.vx = g.vy = 0; g.camPos = new Vector2(ftx, fty); g.SavePos(); }
+            }
             if (g.cam != null) g.cam.enabled = true;
             RenderSettings.fog = oldFog; RenderSettings.fogMode = oldMode; RenderSettings.fogColor = oldColor; RenderSettings.fogStartDistance = oldStart; RenderSettings.fogEndDistance = oldEnd;
             if (root != null) { foreach (var mf in root.GetComponentsInChildren<MeshFilter>()) if (mf.sharedMesh != quad) Destroy(mf.sharedMesh); Destroy(root); }
@@ -398,7 +411,9 @@ public sealed partial class Game
         {
             for (int i = 0; i < 24 && Hits(Px_, Py, Pz); i++) Py += 1; // placed inside something: step up out of it
             float f = -g.KeyY() + move.y, s = g.KeyX() + move.x, len = Mathf.Sqrt(f * f + s * s); if (len > 1) { f /= len; s /= len; }
-            sprint = f > 0.3f && (sprint || g.ShiftHeld || Input.GetKey(KeyCode.LeftControl) || runLock);
+            // on a phone Run is held, so letting go walks again; with keys the sprint stays on until you stop (Minecraft's way)
+            sprint = f > 0.3f && (Game.TouchUI ? g.runHeld || g.ShiftHeld : sprint || g.ShiftHeld || Input.GetKey(KeyCode.LeftControl) || runLock);
+            if (g.jumpHeld) DoJump();
             if (f <= 0.3f) sprint = false;
             inWater = WaterAt(Px_, Py + 0.4f, Pz);
             float speed = inWater ? 2.2f : (sprint ? 5.6f : 4.3f) * (g.riding ? 1.7f : 1);
@@ -589,7 +604,9 @@ public sealed partial class Game
             var safe = Screen.safeArea; float sx = safe.x, sy = sh - safe.yMax, vw = safe.width / g.UiScale, vh = safe.height / g.UiScale;
             GUI.BeginGroup(new Rect(sx, sy, safe.width, safe.height));
             if (g.Button(g.URect(8, 8, 44, 44), "×")) g.Later(g.Close);
-            var tr = g.URect(64, 8, Mathf.Min(360, vw - 72), 44); GUI.Box(tr, $"<b>{src.title}</b>" + (src.sub != null ? $"  <size={g.Ts(11)}>{src.sub}</size>" : ""), g.sNote);
+            string ttl = $"<b>{src.title}</b>" + (src.sub != null ? $"  <size={g.Ts(11)}>{src.sub}</size>" : ""); float ttw = Mathf.Min(360, vw - 72); // the title box grows with its words
+            float tth = Mathf.Max(44, g.sNote.CalcHeight(new GUIContent(ttl), g.U(ttw)) / g.UiScale + 4);
+            var tr = g.URect(64, 8, ttw, tth); GUI.Box(tr, ttl, g.sNote);
             if (g.battle != null) GUI.Box(g.URect(vw / 2 - 210, 58, 420, 30), g.BattleLabel(), g.sToast);
             if (!Game.TouchUI && building == null) GUI.Box(g.URect(vw / 2 - 190, 94, 380, 30), locked ? Loc.L("Esc: Нутаг руу буцах", "Esc: back to Nutag") : Loc.L("Дарж эргэн харна · Esc: гарах", "Click to look around · Esc: leave"), g.sNote);
             string info = src.info?.Invoke();
@@ -597,13 +614,14 @@ public sealed partial class Game
             {
                 var ist = new GUIStyle(g.sNote) { alignment = TextAnchor.MiddleLeft, fontSize = g.Ts(12), wordWrap = true }; float iw = Mathf.Min(520, vw - 16), ih = Mathf.Max(56, ist.CalcHeight(new GUIContent(info), g.U(iw)) / g.UiScale + 4);
                 // phones: under the title, clear of the joystick
-                var ir = g.URect(8, Game.TouchUI ? 56 : vh - 68 - ih, iw, ih); g.UiAdd(ir); GUI.Box(ir, info, ist);
+                var ir = g.URect(8, Game.TouchUI ? 12 + tth : vh - 68 - ih, iw, ih); g.UiAdd(ir); GUI.Box(ir, info, ist);
             }
             float bx0 = 8;
-            foreach (var (label, run) in src.buttons) { string l = label(); float w = Mathf.Max(90, l.Length * 10 + 32); if (g.Button(g.URect(bx0, vh - 60, w, 52), l)) g.Later(run); bx0 += w + 6; }
+            foreach (var (label, run) in src.buttons) { string l = label(); float w = Mathf.Max(90, g.sBtn.CalcSize(new GUIContent(l)).x / g.UiScale + 16); /* measured, so a long label fits */ if (g.Button(g.URect(bx0, vh - 60, w, 52), l)) g.Later(run); bx0 += w + 6; }
             if (g.riding && g.Button(g.URect(bx0, vh - 60, 110, 52), Loc.L("Мориноос буух", "Get off"))) g.Later(g.Dismount);
-            if (g.Button(g.URect(vw - 340, vh - 60, 82, 52), runLock ? Loc.L("Алхах", "Walk") : Loc.L("Гүйх", "Run"), runLock ? g.sPrimary : g.sBtn)) runLock = !runLock;
-            if (g.Button(g.URect(vw - 256, vh - 60, 82, 52), Loc.L("Үсрэх", "Jump"))) DoJump();
+            if (Game.TouchUI) g.Hold(g.URect(vw - 340, vh - 60, 82, 52), false, Loc.L("Гүйх", "Run"));
+            else if (g.Button(g.URect(vw - 340, vh - 60, 82, 52), runLock ? Loc.L("Алхах", "Walk") : Loc.L("Гүйх", "Run"), runLock ? g.sPrimary : g.sBtn)) runLock = !runLock;
+            g.Hold(g.URect(vw - 256, vh - 60, 82, 52), true, Loc.L("Үсрэх", "Jump")); // held: Physics jumps
             if (g.battle != null && Game.TouchUI && g.Button(g.URect(vw - 166, vh - 124, 158, 52), Loc.L("Сум харвах", "Shoot"), g.sPrimary)) g.Later(g.ShootNearest);
             bool was = GUI.enabled; GUI.enabled = nl != null;
             string act = nl != null ? nl + (Game.TouchUI ? "" : " (E)") : Game.TouchUI ? Loc.L("Ойртож хараад товчийг дар", "Face something and tap the button") : src.hint?.Invoke() ?? Loc.L("Ойртож харвал E", "Face something and press E");

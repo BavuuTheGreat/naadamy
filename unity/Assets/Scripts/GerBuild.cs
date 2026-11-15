@@ -30,7 +30,7 @@ public sealed partial class Game
     GUIStyle gbChipLbl, gbBody, gbTitle, gbMat; GUIStyle gbStyleFor;
     static PxCanvas gbArrow;
 
-    static readonly Tx GB_FLOOR = T2("шал", "the floor boards"), GB_STOVE = T2("тулга", "the stove");
+    static readonly Tx GB_FLOOR = T2("шал", "the floor boards"), GB_STOVE = T2("тулга", "the stove"), GB_FLOOR_CHIP = T2("шал", "floor");
     WObj GbLotObj => World.objects.Find(q => q.kind == "lot" && q.i == (V.lot.i >= 0 ? V.lot.i : gbLot));
 
     // ---------------------------------------------------------------- opening and the pointer
@@ -44,7 +44,7 @@ public sealed partial class Game
         Toast(Loc.L("Хэсгүүдээ тавиураас гэр рүүгээ чир!", "Drag the parts from the tray onto your ger!"));
     }
     string StepOfPart(string part) => part == "shal" || part == "tulga" ? part : GerRules.STEPS.First(s => GerRules.NEEDS[s].ContainsKey(part));
-    string PartLabel(string k) => k == "shal" ? GB_FLOOR.ToString() : k == "tulga" ? GB_STOVE.ToString() : PartName(k);
+    string PartLabel(string k) => k == "shal" ? GB_FLOOR_CHIP.ToString() : k == "tulga" ? GB_STOVE.ToString() : PartName(k);
     int PartCount(string k) => k == "shal" || k == "tulga" ? 1 : Part(k) - (k == "uni" && G.stage == 4 ? gbSlots.Count : 0);
 
     /** Called with every pointer event; true when the tray's drag takes it. pos: screen pixels, y up. */
@@ -301,7 +301,7 @@ public sealed partial class Game
         string body = saying ? gbSay.ToString()
             : res.ok ? Loc.L("Хэсгээ гэр рүүгээ чир: ", "Drag it onto your ger: ") + (next == "shal" ? GB_FLOOR : next == "tulga" ? GB_STOVE : T2(string.Join(", ", GerRules.NEEDS[next].Keys.Select(k => PART[k].mn)), string.Join(", ", GerRules.NEEDS[next].Keys.Select(PartName)))) + (next == "uni" ? $" ({gbSlots.Count}/{Bodies.GER_POLES})" : "")
             : GbMissingTx(res.missing).ToString();
-        float cardW = Mathf.Min(vw - 70 - 10, 520), cardX = 70;
+        float cardX = left + 2, cardW = Mathf.Min(vw - cardX - 10, 520); // the card starts past the HUD's "more" column, not over it
         var bs = gbBody;
         float textH = bs.CalcHeight(new GUIContent(body), U(cardW - 28)) / UiScale, cardH = 34 + textH + 8 + 38, cardY = Mathf.Min(ty0 - 6, vh - 100) - cardH;
         var card = UR(cardX, cardY, cardW, cardH); GUI.Box(card, "", sPanel); Ui(card);
@@ -309,9 +309,11 @@ public sealed partial class Game
         if (Button(UR(cardX + cardW - 34, cardY + 6, 28, 26), "✕", sBtn)) Later(() => { gbOn = false; gbHold = null; Sfx.Tap(); }); // the poles in so far stay (they are in the save)
         GUI.Label(UR(cardX + 14, cardY + 30, cardW - 28, textH + 4), body, bs);
         float by = cardY + 34 + textH + 4, bx = cardX + 14;
-        if (guide != null) { var gd = guide.Value; if (Button(UR(bx, by, 190, 32), Loc.L("Тийшээ очих · ", "Go there · ") + gd.name, sPrimary)) Later(() => GbGoThere(gd)); }
+        float goW = 0, goH = 32; // the button fits its text: 190..300 wide, taller only if the text wraps
+        if (guide != null) { var gd = guide.Value; string gt = Loc.L("Тийшээ очих · ", "Go there · ") + gd.name; goW = Mathf.Clamp(sPrimary.CalcSize(new GUIContent(gt)).x / UiScale + 16, 190, 300); goH = Mathf.Max(32, sPrimary.CalcHeight(new GUIContent(gt), U(goW)) / UiScale); if (Button(UR(bx, by, goW, goH), gt, sPrimary)) Later(() => GbGoThere(gd)); }
         else { var lo = GbLotObj; if (lo != null && Dist(px, py, lo.doorX, lo.doorY) > 12 && Button(UR(bx, by, 150, 32), Loc.L("Гэр рүүгээ", "Back to my ger"), sPrimary)) Later(() => GoTo(lo.doorX, lo.doorY, null)); }
-        if (Button(UR(cardX + cardW - 150, by, 136, 32), gbList ? Loc.L("Хаах", "Hide list") : Loc.L("Материал хаанаас?", "Where to get things?"), sBtn)) Later(() => gbList = !gbList);
+        float lx = Mathf.Max(cardX + cardW - 198, bx + (guide != null ? goW : 150) + 8); // 184 wide at the card's right edge, or right of the button beside it
+        if (Button(UR(lx, by, 184, 32), gbList ? Loc.L("Хаах", "Hide list") : Loc.L("Материал хаанаас?", "Where to get things?"), sBtn)) Later(() => gbList = !gbList);
         if (guide != null) GbMarker(guide.Value.at, guide.Value.name, vw, vh);
         if (gbList) GbMaterials(cardX, cardY, cardW);
         // the dragged part, the ger lighting up under it, and parts flying back to the tray

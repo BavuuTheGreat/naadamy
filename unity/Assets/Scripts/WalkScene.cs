@@ -43,13 +43,14 @@ public sealed partial class Game
             moving = d > 1;
             if (moving)
             {
-                running = g.ShiftHeld || runLock;
+                running = g.ShiftHeld || runLock || g.runHeld;
                 float sp = speed * (running ? 1.75f : 1) * dt, sx = dx / d * Mathf.Min(sp, d), sy = dy / d * Mathf.Min(sp, d);
                 bool okX = free(mx + sx, my), okY = free(mx, my + sy);
                 if (okX) mx += sx; if (okY) my += sy;
                 if (!okX && !okY) { tx = mx; ty = my; }
                 dir = Mathf.Abs(dx) > Mathf.Abs(dy) ? (dx < 0 ? 1 : 2) : (dy < 0 ? 3 : 0);
             }
+            if (g.jumpHeld && Time.time - jt >= JUMP_S) { jt = Time.time; Sfx.Pop(); } // the Jump button, held
             float jq = (Time.time - jt) / JUMP_S; z = jq >= 0 && jq < 1 ? Mathf.Round(Mathf.Sin(jq * Mathf.PI) * 9) : 0;
             dogX += (mx + 14 - dogX) * Mathf.Min(1, dt * 2.6f); dogY += (my + 4 - dogY) * Mathf.Min(1, dt * 2.6f);
             near = null; float bd = reach;
@@ -105,16 +106,19 @@ public sealed partial class Game
             var safe = Screen.safeArea; float sx = safe.x, sy = Screen.height - safe.yMax, sw2 = safe.width / g.UiScale, sh = safe.height / g.UiScale;
             GUI.BeginGroup(new Rect(sx, sy, safe.width, safe.height));
             if (g.Button(g.URect(8, 8, 44, 44), "×")) g.Later(g.Close);
-            var tr = g.URect(64, 8, Mathf.Min(360, sw2 - 72), 44); GUI.Box(tr, $"<b>{title}</b>" + (sub != null ? $"  <size={g.Ts(11)}>{sub}</size>" : ""), g.sNote);
+            string ttl = $"<b>{title}</b>" + (sub != null ? $"  <size={g.Ts(11)}>{sub}</size>" : ""); float ttw = Mathf.Min(360, sw2 - 72); // the title box grows with its words
+            float tth = Mathf.Max(44, g.sNote.CalcHeight(new GUIContent(ttl), g.U(ttw)) / g.UiScale + 4);
+            var tr = g.URect(64, 8, ttw, tth); GUI.Box(tr, ttl, g.sNote);
             if (!string.IsNullOrEmpty(info))   // what is said here, in a box as tall as the words
             {
                 var ist = new GUIStyle(g.sNote) { alignment = TextAnchor.MiddleLeft, fontSize = Mathf.RoundToInt(g.UiScale * Game.TALK), wordWrap = true }; float iw = Mathf.Min(520, sw2 - 16), ih = Mathf.Max(48, ist.CalcHeight(new GUIContent(info), g.U(iw)) / g.UiScale + 4);
                 var ir = g.URect(8, sh - 68 - ih, iw, ih); g.UiAdd(ir); GUI.Box(ir, info, ist);
             }
             float bx = 8;
-            foreach (var (label, run) in buttons) { string l = label(); float w = Mathf.Max(90, l.Length * 10 + 32); if (g.Button(g.URect(bx, sh - 60, w, 52), l)) g.Later(run); bx += w + 6; }
-            if (g.Button(g.URect(sw2 - 340, sh - 60, 82, 52), runLock ? Loc.L("Алхах", "Walk") : Loc.L("Гүйх", "Run"), runLock ? g.sPrimary : g.sBtn)) runLock = !runLock;
-            if (g.Button(g.URect(sw2 - 256, sh - 60, 82, 52), Loc.L("Үсрэх", "Jump"))) { if (Time.time - jt >= JUMP_S) { jt = Time.time; Sfx.Pop(); } }
+            foreach (var (label, run) in buttons) { string l = label(); float w = Mathf.Max(90, g.sBtn.CalcSize(new GUIContent(l)).x / g.UiScale + 16); /* measured, so a long label fits */ if (g.Button(g.URect(bx, sh - 60, w, 52), l)) g.Later(run); bx += w + 6; }
+            if (Game.TouchUI) g.Hold(g.URect(sw2 - 340, sh - 60, 82, 52), false, Loc.L("Гүйх", "Run"));
+            else if (g.Button(g.URect(sw2 - 340, sh - 60, 82, 52), runLock ? Loc.L("Алхах", "Walk") : Loc.L("Гүйх", "Run"), runLock ? g.sPrimary : g.sBtn)) runLock = !runLock;
+            g.Hold(g.URect(sw2 - 256, sh - 60, 82, 52), true, Loc.L("Үсрэх", "Jump")); // held: the tick above jumps
             bool was = GUI.enabled; GUI.enabled = near != null;
             string act = near != null ? near.label() + (Game.TouchUI ? "" : " (E)") : Loc.L("Ойртоод E дар", "Walk up and press E");
             var nn = near; if (g.Button(g.URect(sw2 - 166, sh - 64, 158, 56), act, g.sPrimary)) g.Later(() => nn?.run());

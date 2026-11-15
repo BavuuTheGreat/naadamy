@@ -241,7 +241,7 @@ public sealed partial class Game
                 var pv = GUILayoutUtility.GetRect(g.U(100), g.U(216), GUILayout.ExpandWidth(true));
                 g.Box(pv, Px.Col("#c99a5a")); g.Box(new Rect(pv.x + g.U(2), pv.y + g.U(2), pv.width - g.U(4), pv.height - g.U(4)), Px.Col("#a2d8f4"));
                 float chH = g.U(184), chW = chH * 16 / 28f; GUI.DrawTexture(new Rect(pv.center.x - chW - g.U(6), pv.y + g.U(14), chW, chH), g.Tex(Px.Char(look, 0, 0)));
-                GUI.Label(new Rect(pv.center.x + g.U(10), pv.center.y - g.U(26), pv.width / 2 - g.U(16), g.U(28)), V.name, new GUIStyle(g.sTitle) { fontSize = Mathf.RoundToInt(g.U(20)), wordWrap = false });
+                GUI.Label(new Rect(pv.center.x + g.U(10), pv.center.y - g.U(26), pv.width / 2 - g.U(16), g.U(28)), V.name, g.Fit(new GUIStyle(g.sTitle) { fontSize = Mathf.RoundToInt(g.U(20)), wordWrap = false }, V.name, pv.width / 2 - g.U(16)));
                 GUI.Label(new Rect(pv.center.x + g.U(10), pv.center.y + g.U(2), pv.width / 2 - g.U(16), g.U(38)), string.Join(" · ", new[] { e?.name.ToString(), Aimags.ById(aimag)?.name.ToString() }.Where(s => !string.IsNullOrEmpty(s))), new GUIStyle(g.sLabel) { fontSize = Mathf.RoundToInt(g.U(13)) });
                 g.Gap(10);
                 GUILayout.Label(Loc.L("Би бол", "I am a"), g.sSmall);

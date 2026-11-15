@@ -500,7 +500,7 @@ public sealed partial class Game
             if (phase != "done" && GUI.Button(new Rect(safe.x + U * 8, top, U * 44, U * 44), "×", g.sBtn)) g.Later(() => Leave(g));
             // the controls
             float pwid = Mathf.Min(Screen.width - U * 16, U * 820); var pr = new Rect((Screen.width - pwid) / 2, split - U * 4, pwid, Screen.height - split - U * 4 - (Screen.height - safe.yMax) - safe.y * 0);
-            GUILayout.BeginArea(pr); GUILayout.BeginVertical(g.sPanel); panelScroll = g.BeginScroll(panelScroll, pr.height - U * 30);
+            GUILayout.BeginArea(pr); GUILayout.BeginVertical(g.sPanel); panelScroll = g.BeginScroll(panelScroll, pr.height - U * 60);
             Controls(g);
             g.EndScroll(); GUILayout.EndVertical(); GUILayout.EndArea();
             // the scene switch: a black curtain opens on the stadium, with the name of the bout
@@ -619,7 +619,7 @@ public sealed partial class Game
                         var r = Meter(); g.Box(r, Px.Col("#2b1e2e")); var inner = new Rect(r.x + g.U(2), r.y + g.U(2), r.width - g.U(4), r.height - g.U(4)); g.Box(inner, Px.Col("#5a4a5e"));
                         g.Box(new Rect(inner.x + (szc - szw / 2) * inner.width, inner.y, szw * inner.width, inner.height), Px.Col("#f7c646"));
                         g.Box(new Rect(inner.x, inner.y + inner.height * 0.3f, sv * inner.width, inner.height * 0.4f), Px.Col("#3f76db"));
-                        if (GUILayout.RepeatButton(Loc.L("Барих: дарж байгаад тавих (Space)", "Grip: hold, then let go (Space)"), g.sPrimary, GUILayout.MinHeight(g.U(56)))) holdFrame = Time.frameCount;
+                        bool gripHeld = GUILayout.RepeatButton(Loc.L("Барих: дарж байгаад тавих (Space)", "Grip: hold, then let go (Space)"), g.sPrimary, GUILayout.MinHeight(g.U(56))); g.DrawingAt(GUILayoutUtility.GetLastRect()); if (gripHeld) holdFrame = Time.frameCount;
                         break;
                     }
                 case "balance":
@@ -629,8 +629,8 @@ public sealed partial class Game
                         g.Box(new Rect(inner.x + (0.5f + bx2 * 0.48f) * inner.width - g.U(2), r.y - g.U(3), g.U(4), r.height + g.U(6)), Px.Col("#2b1e2e"));
                         g.Bar(GUILayoutUtility.GetRect(10, g.U(8), GUILayout.ExpandWidth(true)), Mathf.Max(0, 1 - el / skLimit), Px.Col("#f7c646"));
                         GUILayout.BeginHorizontal();
-                        if (GUILayout.RepeatButton("◄", g.sBtn, GUILayout.MinHeight(g.U(52)))) bdir = -1;
-                        if (GUILayout.RepeatButton("►", g.sBtn, GUILayout.MinHeight(g.U(52)))) bdir = 1;
+                        bool leftHeld = GUILayout.RepeatButton("◄", g.sBtn, GUILayout.MinHeight(g.U(52))); g.DrawingAt(GUILayoutUtility.GetLastRect()); if (leftHeld) bdir = -1;
+                        bool rightHeld = GUILayout.RepeatButton("►", g.sBtn, GUILayout.MinHeight(g.U(52))); g.DrawingAt(GUILayoutUtility.GetLastRect()); if (rightHeld) bdir = 1;
                         GUILayout.EndHorizontal();
                         break;
                     }

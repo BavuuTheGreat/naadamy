@@ -226,7 +226,7 @@ public sealed partial class Game
             if (!thumbs.TryGetValue(id, out var live)) { thumbs[id] = live = new Live(Scenes.W, Scenes.H); var st = new SceneState { sub = 1 }; Lessons.Apply(st, l["final"]); Scenes.ByName(l["scene"].S)(live.c, st, 2); }
             float pad = g.U(14), iw = w - pad * 2, ih = iw * Scenes.H / Scenes.W;
             var ds = new GUIStyle(g.sLabel) { fontSize = Mathf.RoundToInt(g.U(13)), normal = { textColor = Px.Col("#6b4220") } }; float dh = Mathf.Max(g.U(60), ds.CalcHeight(new GUIContent(l["desc"].T.ToString()), iw)); // a long description makes the card taller
-            var r = GUILayoutUtility.GetRect(w, ih + g.U(90) + dh, GUILayout.Width(w), GUILayout.Height(ih + g.U(90) + dh));
+            var r = GUILayoutUtility.GetRect(w, ih + g.U(96) + dh, GUILayout.Width(w), GUILayout.Height(ih + g.U(96) + dh));
             if (GUI.Button(r, "", g.sPanel))
             {
                 if (locked) g.Later(() => g.Toast(Loc.L("Өмнөх хичээлийг эхлээд дуусга.", "Finish the earlier lesson first.")));
@@ -452,7 +452,7 @@ public sealed partial class Game
                         if (ty == "hold")
                         {
                             bool was = GUI.enabled; GUI.enabled = !gaugeOk;
-                            bool down = GUILayout.RepeatButton(s["label"].T.ToString(), g.sPrimary, GUILayout.MinHeight(g.U(52))) || Input.GetKey(KeyCode.Space);
+                            bool pressed = GUILayout.RepeatButton(s["label"].T.ToString(), g.sPrimary, GUILayout.MinHeight(g.U(52))); g.DrawingAt(GUILayoutUtility.GetLastRect()); bool down = pressed || Input.GetKey(KeyCode.Space);
                             GUI.enabled = was;
                             if (Event.current.type == EventType.Repaint) { if (down && !heating && !gaugeOk) heating = true; else if (!down && heating) { heating = false; CheckGauge(s); } }
                         }

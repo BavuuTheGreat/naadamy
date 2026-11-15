@@ -59,6 +59,8 @@ public sealed partial class Game
 
         public override void Tick(Game gg, float dt)
         {
+            // no finger down: a window may have eaten the lift, so forget held taps (sprint and lane would stick)
+            if (Input.touchCount == 0 && !Input.GetMouseButton(0)) { ptr.Clear(); chuIds.Clear(); }
             float now = Time.time;
             if (phase == "giingoo")
             {
@@ -215,7 +217,12 @@ public sealed partial class Game
             GUI.Label(g.URect(230, 52, 200, 18), Loc.L("Хүч", "Stamina"), new GUIStyle(g.sPixel) { fontSize = PxSize(U * 11), alignment = TextAnchor.MiddleLeft, normal = { textColor = Color.white } });
             // what is happening
             string line = phase == "count" ? (3 - Mathf.FloorToInt(t - t0)).ToString() : say;
-            if (!string.IsNullOrEmpty(line)) GUI.Box(g.URect(vw / 2 - 220, vh - 60, 440, 40), line, new GUIStyle(g.sNote) { fontSize = phase == "count" ? g.Ts(22) : g.Ts(12) });
+            if (!string.IsNullOrEmpty(line))
+            {
+                var lst = new GUIStyle(g.sNote) { fontSize = phase == "count" ? g.Ts(22) : g.Ts(12) };
+                float lh = Mathf.Max(40, lst.CalcHeight(new GUIContent(line), g.U(440)) / g.UiScale + 4); // grows with the words, bottom edge stays put
+                GUI.Box(g.URect(vw / 2 - 220, vh - 20 - lh, 440, lh), line, lst);
+            }
             if (phase == "go") GUI.Label(g.URect(8, vh - 26, 420, 20), Loc.L(TouchUI ? "▲▼ эгнээ · Чү! хурдлах · Үсрэх" : "W/S эгнээ · Shift/J Чү! · Space үсрэх", TouchUI ? "▲▼ lane · Chü! sprint · Jump" : "W/S lane · Shift/J Chü! · Space jump"), new GUIStyle(g.sPixel) { fontSize = PxSize(U * 11), alignment = TextAnchor.MiddleLeft, normal = { textColor = new Color(1, 1, 1, 0.8f) } });
             // touch buttons: lanes on the left, Chü! and jump on the right
             Rect B(float x, float y, float w, float h) { var r = g.URect(x, y, w, h); return r; }

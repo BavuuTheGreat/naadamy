@@ -219,7 +219,7 @@ public sealed partial class Game
             float tt = (r.phase == "done" ? r.finishT : Time.time) - r.go;
             var st = new GUIStyle(sChipText) { alignment = TextAnchor.MiddleCenter };
             GUI.Label(UR(vw / 2 - 140, 60, 90, 24), $"{Mathf.Min(r.lap, r.C.laps)}/{r.C.laps}", st);
-            GUI.Label(UR(vw / 2 - 45, 60, 90, 24), $"<size={Ts(18)}>{RacePlace()}/{r.npcs.Count + 1}</size>", st);
+            GUI.Label(UR(vw / 2 - 45, 60, 90, 30), $"<size={Ts(18)}>{RacePlace()}/{r.npcs.Count + 1}</size>", st);
             GUI.Label(UR(vw / 2 + 50, 60, 90, 24), tt.ToString("0.0"), st);
             Bar(UR(vw / 2 - 130, 88, 260, 10), r.stam, r.stam < 0.2f ? Px.Col("#e14b3d") : Px.Col("#f7c646"));
         }
