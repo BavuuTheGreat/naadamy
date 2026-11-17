@@ -63,15 +63,11 @@ public sealed class Net
     bool Live => ws != null;
 #endif
 
-#if UNITY_WEBGL && !UNITY_EDITOR
-    const string WS_SCHEME = "wss://"; // a web page served over https may only open wss
-#else
-    const string WS_SCHEME = "ws://";
-#endif
     static string WsUrl(string server)
     {
         string s = (server ?? "").Trim().TrimEnd('/'); if (s == "") return null;
-        if (s.StartsWith("https://")) s = "wss://" + s.Substring(8); else if (s.StartsWith("http://")) s = "ws://" + s.Substring(7); else if (!s.StartsWith("ws")) s = WS_SCHEME + s;
+        if (s.StartsWith("https://")) s = "wss://" + s.Substring(8); else if (s.StartsWith("http://")) s = "ws://" + s.Substring(7);
+        else if (!s.StartsWith("ws")) s = (Family.Scheme(s) == "https://" ? "wss://" : "ws://") + s; // wss, except a server on the home Wi-Fi (Family.Scheme)
         return s + "/ws";
     }
     /** Connect (again) with the current server address and room. No address: play alone. */

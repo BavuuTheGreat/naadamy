@@ -501,7 +501,7 @@ public sealed partial class Game
         static string Base(Game g, SaveData me)
         {
             string s = (Family.ServerOf(g, me) ?? "").Trim().TrimEnd('/'); if (s == "") return null;
-            if (!s.StartsWith("http")) s = Family.SCHEME + s; return s + "/api/voice";
+            if (!s.StartsWith("http")) s = Family.Scheme(s) + s; return s + "/api/voice";
         }
         static UnityWebRequest Req(Game g, SaveData me, string url, string method, string pin = null)
         {

@@ -13,7 +13,7 @@ using UnityEngine.Networking;
 /** POST /api/account: register, log in, rename, change the password, delete. See docs/PROTOCOL.md, "Online arena". */
 public static class ArenaApi
 {
-    static string Url(string server, string path) { string s = (server ?? "").Trim().TrimEnd('/'); if (s == "") return null; if (!s.StartsWith("http")) s = Family.SCHEME + s; return s + path; }
+    static string Url(string server, string path) { string s = (server ?? "").Trim().TrimEnd('/'); if (s == "") return null; if (!s.StartsWith("http")) s = Family.Scheme(s) + s; return s + path; }
     /** done always gets an object: the server's answer, or { ok: false, reason: "offline" | "no-server" }. */
     public static IEnumerator Post(string server, string body, Action<J> done, string path = "/api/account")
     {
