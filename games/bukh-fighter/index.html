@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="mn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Бөхийн Барилдаан</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Russo+One&display=swap" rel="stylesheet">
+<style>
+  html,body{margin:0;height:100%;background:#07080f;color:#f3e9d2;font-family:'Russo One',Impact,system-ui,sans-serif;overflow:hidden}
+  #wrap{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(100vw,calc(100vh*16/9));aspect-ratio:16/9}
+  canvas#cv{width:100%;height:100%;display:block}
+  .ov{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;background:rgba(8,10,24,.78);padding:16px;box-sizing:border-box;overflow:auto}
+  .hidden{display:none!important}
+  h1{font-size:clamp(30px,6vw,70px);margin:0;color:#f2c14e;letter-spacing:2px;text-shadow:0 4px 0 #8c1520,0 0 34px rgba(242,193,78,.45)}
+  h2{margin:0;font-size:clamp(20px,3.4vw,36px);color:#f2c14e}
+  .sub{opacity:.85;margin-top:-4px;font-size:clamp(12px,1.6vw,18px)}
+  button{font:inherit;font-size:clamp(13px,1.8vw,20px);padding:10px 24px;border-radius:10px;border:2px solid #f2c14e;background:#1c2756;color:#fff;cursor:pointer;min-width:min(320px,80vw)}
+  button:hover,button:focus-visible{background:#c8202e;outline:none}
+  button.small{min-width:0;padding:8px 16px;font-size:clamp(12px,1.5vw,16px)}
+  .cards{display:flex;gap:14px;flex-wrap:wrap;justify-content:center}
+  .card{background:#121836;border:3px solid #2e3768;border-radius:12px;padding:8px;cursor:pointer;width:clamp(120px,18vw,190px);transition:transform .12s,border-color .12s}
+  .card:hover{border-color:#f2c14e;transform:translateY(-4px)}
+  .card canvas{width:100%;aspect-ratio:184/200;display:block;border-radius:8px;background:radial-gradient(circle at 50% 70%,#3a2a4a,#0c0e1c)}
+  .card .nm{font-size:clamp(14px,2vw,22px);color:#f2c14e;margin-top:6px}
+  .card .tt{font-family:system-ui,sans-serif;font-size:12px;opacity:.8}
+  .help{font-family:system-ui,sans-serif;font-size:clamp(11px,1.25vw,14px);line-height:1.55;max-width:860px;text-align:left;background:rgba(0,0,0,.35);border:1px solid #2e3768;border-radius:10px;padding:10px 16px;columns:2;column-gap:28px}
+  .help b{color:#f2c14e}
+  kbd{background:#222b55;border:1px solid #4b5694;border-radius:4px;padding:0 5px;font-family:inherit}
+  input{font:inherit;font-size:22px;text-transform:uppercase;padding:8px 12px;width:170px;text-align:center;border-radius:8px;border:2px solid #f2c14e;background:#0b0d16;color:#fff;letter-spacing:4px}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:center}
+  #netStatus{font-family:system-ui,sans-serif;min-height:1.4em;font-size:clamp(13px,1.6vw,18px)}
+  #netStatus b{font-family:'Russo One',Impact,sans-serif;color:#f2c14e;font-size:1.6em;letter-spacing:4px}
+  #msg{color:#ff8a7a;font-family:system-ui,sans-serif;min-height:1.2em}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="cv" width="960" height="540"></canvas>
+
+  <div id="menu" class="ov">
+    <h1>БӨХИЙН БАРИЛДААН</h1>
+    <div class="sub">Монгол бөхийн тулаант тоглоом</div>
+    <div id="msg"></div>
+    <button data-mode="cpu">Компьютертэй барилдах</button>
+    <button data-mode="local">2 тоглогч (нэг компьютер)</button>
+    <button data-mode="online">Онлайн найзтайгаа</button>
+    <div class="help">
+      <b>Удирдлага (ганцаараа / онлайн)</b><br>
+      Хөдлөх: <kbd>W A S D</kbd> эсвэл сумнууд · Харайх <kbd>W</kbd> · Суух <kbd>S</kbd><br>
+      <kbd>J</kbd> хөнгөн цохилт · <kbd>K</kbd> хүчтэй цохилт · <kbd>L</kbd> өшиглөлт · <kbd>I</kbd> барьж шидэх<br>
+      Хамгаалах: ар тийшээ барих (доод цохилтыг суугаад хамгаална)<br>
+      <b>2 тоглогч:</b> 1-р: <kbd>WASD</kbd> + <kbd>F G H</kbd>, шидэх <kbd>R</kbd> · 2-р: сумнууд + <kbd>, . /</kbd>, шидэх <kbd>M</kbd> (эсвэл Numpad 1 2 3 0)<br>
+      <b>Тусгай мэх</b> (урагш = өрсөлдөгч рүү)<br>
+      ↓ ↘ → + <kbd>K</kbd> — Бүргэдийн дайралт<br>
+      ← → + <kbd>J</kbd> — Арслангийн давшилт<br>
+      Суугаад <kbd>K</kbd> — Өргөлт (агаарт хөөргөнө) · Суугаад <kbd>L</kbd> — Тах (унагана)<br>
+      ↓ (тавиад) ↓ + <kbd>K</kbd> — <b>СУПЕР</b> (ХҮЧ дүүрсэн үед)<br>
+      Шидүүлэх агшинд <kbd>I</kbd> — шидэлтээс мултрах<br>
+      <b>Комбо</b> (цохилт оногдож байхад дараагийнхыг дар)<br>
+      J J K — Төмөр нударга · J J K ↓↘→K — Тэнгэрийн бүргэд<br>
+      J J K ←→J — Арслангийн хүч · J L ←→J — Хөх чоно<br>
+      суу J, J, K, ↓↘→K — Хангарьдын дэвэлт · суу J, L — Гадна тах
+    </div>
+  </div>
+
+  <div id="select" class="ov hidden">
+    <h2 id="selTitle">Бөхөө сонго</h2>
+    <div class="cards" id="cards"></div>
+    <button class="small" id="selBack">Буцах</button>
+  </div>
+
+  <div id="online" class="ov hidden">
+    <h2>Онлайн барилдаан</h2>
+    <div id="netStatus">Өрөө үүсгэ, эсвэл найзынхаа кодоор нэгд.</div>
+    <button id="btnHost">Өрөө үүсгэх</button>
+    <div class="row">
+      <input id="joinCode" maxlength="5" placeholder="КОД" autocomplete="off">
+      <button class="small" id="btnJoin">Нэгдэх</button>
+    </div>
+    <button class="small" id="netBack">Буцах</button>
+  </div>
+</div>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
