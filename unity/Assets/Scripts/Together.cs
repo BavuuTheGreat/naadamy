@@ -43,8 +43,9 @@ public sealed partial class Game
         if (Mathf.Abs(p.vx) < 0.01f) p.vx = 0; if (Mathf.Abs(p.vy) < 0.01f) p.vy = 0;
         bool over = !FreeAt(p.px + 0.5f, p.py + 0.82f); float d0 = Dist(p.px, p.py, px, py);
         bool Ok(float x, float y) => Dist(x, y, px, py) <= 14 || Dist(x, y, px, py) < d0; // a gentle tether: never wander off the shared screen
-        if (p.vx != 0 && FreeAt(p.px + 0.5f + p.vx * dt, p.py + 0.82f, over) && Ok(p.px + p.vx * dt, p.py)) p.px += p.vx * dt; else p.vx = 0;
-        if (p.vy != 0 && FreeAt(p.px + 0.5f, p.py + 0.82f + p.vy * dt, over) && Ok(p.px, p.py + p.vy * dt)) p.py += p.vy * dt; else p.vy = 0;
+        bool inWall = !FreeAt(p.px + 0.5f, p.py + 0.82f, true); // stuck in a wall: let them walk out (as Move does)
+        if (p.vx != 0 && (inWall || FreeAt(p.px + 0.5f + p.vx * dt, p.py + 0.82f, over)) && Ok(p.px + p.vx * dt, p.py)) p.px += p.vx * dt; else p.vx = 0;
+        if (p.vy != 0 && (inWall || FreeAt(p.px + 0.5f, p.py + 0.82f + p.vy * dt, over)) && Ok(p.px, p.py + p.vy * dt)) p.py += p.vy * dt; else p.vy = 0;
         p.moving = Mathf.Sqrt(p.vx * p.vx + p.vy * p.vy) > 0.3f;
         if (p.moving) p.dir = Mathf.Abs(p.vx) > Mathf.Abs(p.vy) * 0.9f ? (p.vx < 0 ? 1 : 2) : (p.vy < 0 ? 3 : 0);
         if (Mathf.Abs(p.vx) > 0.3f) p.face = p.vx < 0 ? 1 : 2;

@@ -151,6 +151,7 @@ public sealed partial class Game : MonoBehaviour
     void Update()
     {
         float dt = Mathf.Min(Time.deltaTime, 0.05f);
+        hh = IsoOn ? HW : HH;
         if (later.Count > 0) { var run = later.ToArray(); later.Clear(); foreach (var f in run) f(); }
         ReadWheel();
         if (V == null && modal == null) Open(new AuthPage());
@@ -208,9 +209,12 @@ public sealed partial class Game : MonoBehaviour
 
     /** over: the feet are off the ground (or already on a rock), so rocks no longer block the way. */
     static bool Solid(int x, int y, bool over) => World.Blocked(x, y) && !(over && World.At(x, y) == 'r');
+    /** The feet hit-box's half depth: thin on the flat map (a sprite may overlap the wall behind it), square in the
+     *  isometric view, where a doll is a body as deep as it is wide and would otherwise sink into walls and rocks. */
+    static float hh = HH;
     static bool FreeAt(float fx, float fy, bool over = false) =>
-        !Solid(Mathf.FloorToInt(fx - HW), Mathf.FloorToInt(fy - HH), over) && !Solid(Mathf.FloorToInt(fx + HW), Mathf.FloorToInt(fy - HH), over) &&
-        !Solid(Mathf.FloorToInt(fx - HW), Mathf.FloorToInt(fy + HH), over) && !Solid(Mathf.FloorToInt(fx + HW), Mathf.FloorToInt(fy + HH), over);
+        !Solid(Mathf.FloorToInt(fx - HW), Mathf.FloorToInt(fy - hh), over) && !Solid(Mathf.FloorToInt(fx + HW), Mathf.FloorToInt(fy - hh), over) &&
+        !Solid(Mathf.FloorToInt(fx - HW), Mathf.FloorToInt(fy + hh), over) && !Solid(Mathf.FloorToInt(fx + HW), Mathf.FloorToInt(fy + hh), over);
     static bool Los(float ax, float ay, float bx, float by)
     {
         int n = Mathf.CeilToInt(Mathf.Sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay)) / 0.2f);
@@ -260,8 +264,9 @@ public sealed partial class Game : MonoBehaviour
         bool over = Time.time - jumpT < JUMP_S || !FreeAt(px + 0.5f, py + 0.82f);
         bool RockAhead(float nx, float ny) => !over && (ix != 0 || iy != 0) && !FreeAt(nx, ny) && FreeAt(nx, ny, true);
         if (RockAhead(px + 0.5f + vx * dt, py + 0.82f) || RockAhead(px + 0.5f, py + 0.82f + vy * dt)) { Jump(); over = true; }
-        if (vx != 0 && FreeAt(px + 0.5f + vx * dt, py + 0.82f, over)) px += vx * dt; else vx = 0;
-        if (vy != 0 && FreeAt(px + 0.5f, py + 0.82f + vy * dt, over)) py += vy * dt; else vy = 0;
+        bool inWall = !FreeAt(px + 0.5f, py + 0.82f, true); // stuck in a wall (a spot saved with the thinner flat-map hit-box): let you walk out
+        if (vx != 0 && (inWall || FreeAt(px + 0.5f + vx * dt, py + 0.82f, over))) px += vx * dt; else vx = 0;
+        if (vy != 0 && (inWall || FreeAt(px + 0.5f, py + 0.82f + vy * dt, over))) py += vy * dt; else vy = 0;
         float speed = Mathf.Sqrt(vx * vx + vy * vy);
         moving = speed > 0.3f;
         var sv = IsoOn ? Iso.ToScreen(vx, vy) * 0.70710678f : new Vector2(vx, vy); // facing follows the way you go on the screen
@@ -488,7 +493,9 @@ public sealed partial class Game : MonoBehaviour
                 {
                     Look lk = o.kind == "npc" ? Rules.ZASUUL : o.kind == "emee" ? Rules.EMEE : o.kind == "general" ? Rules.GENERAL : o.kind == "historian" ? Rules.HISTORIAN : Rules.NpcById(o.id).look;
                     int d = o.kind == "npc" ? ((int)(t / 2.5f) % 4 == 3 ? 2 : 0) : o.kind == "emee" ? ((int)(t / 3) % 4 == 2 ? 1 : 0) : ((int)(t / 3 + o.x) % 5 == 4 ? 2 : 0);
-                    Shadow(o.x * T, o.y * T, o.y); Person(lk, d, 0, o.x, o.y, o.y);
+                    // isometric: feet in the middle of their (blocked) tile, so the body stays inside it instead of overhanging
+                    // the tile in front, where you stand to talk to them
+                    Shadow(o.x * T, o.y * T, o.y); Person(lk, d, 0, o.x, IsoOn ? o.y - 0.32f : o.y, o.y);
                 }
             }
             if (IsoOn) foreach (var o in World.objects) // the уяа's two horses (the flat map has them painted in)
