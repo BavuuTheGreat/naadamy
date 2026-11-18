@@ -38,19 +38,46 @@ class Canvas2:
         a = np.asarray(self.sm).copy(); a[np.asarray(m.resize((PW, PH), Image.BOX)) > 150] = 0
         self.sm = Image.fromarray(a, 'RGBA'); self.s = ImageDraw.Draw(self.sm)
 
-    def poly(self, pts, fill):
+    def poly(self, pts, fill, form=None):
         self.c.polygon(self.P(pts), fill=fill)
         self.cover(lambda d, f: d.polygon([(x * f, y * f) for x, y in pts], fill=255))
+        if form: self.form(lambda d: d.polygon(self.P(pts), fill=255), fill, *form)
 
-    def ell(self, cx, cy, rx, ry, fill):
+    def ell(self, cx, cy, rx, ry, fill, form=None):
         if min(rx, ry) < 2.6:   # small dots and beads: crisp pixels
             b = self.box(cx, cy, rx, ry)   # PIL leaves out ellipses this small, so they are drawn as little blocks
             (self.s.rectangle if b[2] - b[0] < 2 or b[3] - b[1] < 2 else self.s.ellipse)(b, fill=tuple(fill) + (255,)); return
         self.c.ellipse([(cx - rx) * K, (cy - ry) * K, (cx + rx) * K, (cy + ry) * K], fill=fill)
         self.cover(lambda d, f: d.ellipse([(cx - rx) * f, (cy - ry) * f, (cx + rx) * f, (cy + ry) * f], fill=255))
+        if form: self.form(lambda d: d.ellipse([(cx - rx) * K, (cy - ry) * K, (cx + rx) * K, (cy + ry) * K], fill=255), fill, *form)
+
+    def form(self, draw, base, shadow=(4, 4), light=(2, 2)):
+        """Cel shading like Bolormaa's: the light comes from the upper left, so a shape gets a cool shadow band along
+        its lower-right edge (two tones) and a warm lit band along its upper-left edge. Offsets are in drawing units."""
+        m = Image.new('L', self.col.size, 0); draw(ImageDraw.Draw(m)); m = np.asarray(m) > 127
+        def edge(dx, dy):   # the part of the shape that leaves it when moved by (dx, dy) units
+            dx, dy = round(dx * K), round(dy * K); sh = np.zeros_like(m)
+            H, W = m.shape
+            sh[max(0, -dy):H - max(0, dy), max(0, -dx):W - max(0, dx)] = m[max(0, dy):H - max(0, -dy), max(0, dx):W - max(0, -dx)]
+            return m & ~sh
+        a = np.asarray(self.col).copy(); b = np.array(base, float)
+        mix = lambda t, w: tuple(int(round(b[i] * (1 - w) + t[i] * w)) for i in range(3)) + (255,)
+        if light: a[edge(-light[0], -light[1])] = mix((255, 244, 222), 0.22)
+        if shadow:
+            a[edge(*shadow)] = mix((70, 36, 96), 0.26)
+            a[edge(shadow[0] * 0.45, shadow[1] * 0.45)] = mix((40, 16, 60), 0.42)
+        self.col = Image.fromarray(a, 'RGBA'); self.c = ImageDraw.Draw(self.col)
+
+    def strands(self, pts, lines, col, w=0.7):
+        """Hair texture: thin strands in a darker or lighter tone, kept inside the shape pts (drawn in colour, not ink)."""
+        layer = Image.new('RGBA', self.col.size, (0, 0, 0, 0)); d = ImageDraw.Draw(layer)
+        for ln in lines: d.line(self.P(ln), fill=tuple(col) + (255,), width=max(1, round(w * K)))
+        m = Image.new('L', self.col.size, 0); ImageDraw.Draw(m).polygon(self.P(pts), fill=255)
+        layer.putalpha(Image.fromarray(np.minimum(np.asarray(layer)[..., 3], np.asarray(m)), 'L'))
+        self.col.alpha_composite(layer); self.c = ImageDraw.Draw(self.col)
 
     def line(self, pts, w=2.0, col=INK):
-        self.s.line(self.S(pts), fill=tuple(col) + (255,), width=1 if w < 3 else 2)
+        self.s.line(self.S(pts), fill=tuple(col) + (255,), width=1 if w < 2.1 else 2)   # outlines (2.2 and up) are bold like Bolormaa's ink
 
     def oline(self, pts, w=2.0):   # an outline round a closed shape
         self.line(pts + [pts[0]], w)
@@ -63,10 +90,23 @@ def bez(p0, p1, p2, n=20):
     return [((1 - t) ** 2 * p0[0] + 2 * (1 - t) * t * p1[0] + t * t * p2[0], (1 - t) ** 2 * p0[1] + 2 * (1 - t) * t * p1[1] + t * t * p2[1]) for t in [i / n for i in range(n + 1)]]
 
 
-def finish(cv, colours=30):
+def hair_lines(seed, x0, x1, y0, y1, n, sway=8):
+    """n strands falling from the top of a box, each a gentle curve; the same seed gives the same strands."""
+    import random
+    r = random.Random(seed); out = []
+    for i in range(n):
+        x = x0 + (x1 - x0) * (i + r.random()) / n; top = y0 + r.random() * 6; bot = y1 - r.random() * (y1 - y0) * 0.4
+        mid = (x + (x - (x0 + x1) / 2) * 0.25 + r.uniform(-sway, sway) * 0.3, (top + bot) / 2)
+        out.append(bez((x, top), mid, (x + (x - (x0 + x1) / 2) * 0.35, bot), 12))
+    return out
+
+
+def finish(cv, colours=64):
     """The reduction to pixel art: average the shapes down to a small palette, then lay the crisp lines on top."""
     small = cv.col.resize((PW, PH), Image.BOX)
     rgbim = small.convert('RGB').quantize(colors=colours, method=Image.MEDIANCUT, dither=Image.NONE).convert('RGBA')
+    src, out = np.asarray(small), np.asarray(rgbim).copy(); white = src[..., :3].min(axis=2) > 225   # eye whites and teeth are
+    out[white] = src[white]; rgbim = Image.fromarray(out, 'RGBA')                                      # too small to win a palette slot
     rgbim.alpha_composite(cv.sm)
     return rgbim
 
@@ -81,11 +121,12 @@ def eyes(cv, c, kind, look=(0, 0), only=None):
         if only and s != only: continue
         cx, cy, wf = EYE[s]
         if kind in ('open', 'wide', 'look', 'down'):
-            h = 7.2 if kind != 'wide' else 8.6
-            if kind == 'down': h = 5.4
+            h = 5.8 if kind != 'wide' else 7.4   # almond eyes, the size of Bolormaa's
+            if kind == 'down': h = 4.4
             cv.poly([(cx - 10 * wf, cy + 1), (cx - 5 * wf, cy - h), (cx + 5 * wf, cy - h), (cx + 11 * wf, cy - 1), (cx + 6 * wf, cy + 4), (cx - 6 * wf, cy + 4)], (250, 246, 240))
-            cv.ell(cx + lx, cy - 0.5 + ly, 5.4 * wf, 6.6 if kind != 'down' else 5.0, iris)
-            cv.ell(cx + lx, cy - 0.5 + ly, 2.6 * wf, 3.0, (24, 12, 10))
+            cv.ell(cx + lx, cy - 0.5 + ly, 4.6 * wf, min(h, 5.4) if kind != 'down' else 4.0, iris)
+            cv.ell(cx + lx, cy - 2.2 + ly, 4.2 * wf, 2.2, tuple(round(v * 0.55) for v in iris))   # the lid's shadow on the iris
+            cv.ell(cx + lx, cy - 0.5 + ly, 2.4 * wf, 2.8, (24, 12, 10))
             cv.ell(cx - 2 * wf + lx, cy - 3 + ly, 1.9, 1.9, (255, 255, 255))
             cv.line([(cx - 11 * wf, cy + 2), (cx - 5 * wf, cy - h - 1), (cx + 5 * wf, cy - h - 1), (cx + 12 * wf, cy - 1)], 3.4)   # heavy black lashes
             cv.line([(cx + s * 11 * wf, cy - 1), (cx + s * 14 * wf, cy - 3)], 2.2)
@@ -144,31 +185,34 @@ def bust(c, expr='happy', talk=0, blink=False):
     # hair behind the head: a full mass framing the face, down to the shoulders for the women
     if fem:
         back = [(14, 116 if long_ else 90), (12, 60), (18, 34), (30, 16), (50, 5), (72, 4), (90, 12), (102, 30), (106, 56), (106, 116 if long_ else 90)]
-        cv.poly(back, hair); cv.oline(back, 2.2)
+        cv.poly(back, hair, form=((5, 3), (2, 2))); cv.oline(back, 2.2)
+        cv.strands(back, hair_lines(c['hair'][1], 12, 106, 8, 118 if long_ else 92, 22), hair_d)
+        cv.strands(back, hair_lines(c['hair'][2], 14, 104, 8, 100 if long_ else 80, 9), hair_l, 0.5)
     if do == 'bun':
-        cv.ell(64, 9, 16, 10, hair); cv.oell(64, 9, 16, 10, 2.2); cv.line([(52, 6), (66, 2)], 1.4, hair_l)
+        cv.ell(64, 9, 16, 10, hair, form=((3, 3), (1.5, 1.5))); cv.oell(64, 9, 16, 10, 2.2); cv.line([(52, 6), (66, 2)], 1.4, hair_l)
     # the deel: a dark blue body with teal shoulders, a high mandarin collar edged in gold, a gold knot clasp
     bw = 4 if c.get('broad') else 0
     body = [(0, 144), (0, 120), (30 - bw, 108), (92 + bw, 108), (112, 118), (112, 144)]
-    cv.poly(body, deel); cv.line(body[1:-1], 2.2)
+    cv.poly(body, deel, form=((4, 6), (0, 2))); cv.line(body[1:-1], 2.2)
     for sh in ([(0, 144), (0, 122), (28 - bw, 112), (44, 126), (40, 144)], [(76, 144), (82, 128), (100 + bw, 116), (112, 122), (112, 144)]):
-        cv.poly(sh, panel); cv.line(sh[1:-1], 2.0)
+        cv.poly(sh, panel, form=((5, 6), (2, 2))); cv.line(sh[1:-1], 2.0)
+        cv.strands(sh, [bez((sh[2][0] + 4, sh[2][1] + 4), (sh[2][0] + 8, sh[2][1] + 14), (sh[2][0] + 6, 144), 10)], tuple(round(v * 0.82) for v in panel), 0.9)   # a fold
     cv.poly([(44, 126), (66, 128), (66, 144), (40, 144)], deel_d)
     if c.get('medal'): cv.ell(26, 132, 4.5, 4.5, rgb('#ffcf3a')); cv.oell(26, 132, 4.5, 4.5, 1.6)
     cv.poly([(44, 92), (72, 92), (72, 112), (44, 112)], skin); cv.poly([(44, 92), (72, 92), (72, 101), (44, 98)], skin_d)     # the neck
     cv.line([(45, 90), (46, 108)], 2.0); cv.line([(72, 96), (72, 110)], 2.0)
     if c.get('fur'):
-        fur = rgb(c['fur']); fc = [(30, 108), (94, 106), (98, 118), (66, 126), (28, 118)]; cv.poly(fc, fur); cv.oline(fc, 2.0)
+        fur = rgb(c['fur']); fc = [(30, 108), (94, 106), (98, 118), (66, 126), (28, 118)]; cv.poly(fc, fur, form=((3, 4), (1.5, 1.5))); cv.oline(fc, 2.0)
+        cv.strands(fc, [[(x, 107), (x + 2, 124)] for x in range(32, 96, 4)], tuple(round(v * 0.8) for v in fur), 0.6)
     else:
         collar = [(36, 100), (68, 110), (86, 104), (88, 118), (68, 128), (38, 116)]
-        cv.poly(collar, deel); cv.poly([(68, 110), (86, 104), (88, 118), (68, 128)], deel_d); cv.oline(collar, 2.2)
+        cv.poly(collar, deel, form=((3, 3), (1.5, 1.5))); cv.poly([(68, 110), (86, 104), (88, 118), (68, 128)], deel_d); cv.oline(collar, 2.2)
         cv.line([(37, 101), (68, 111), (86, 105)], 2.2, gold); cv.line([(68, 112), (68, 127)], 2.2, gold)
     cv.line([(61, 126), (75, 126)], 2.2, gold); cv.line([(68, 122), (68, 138)], 2.2, gold)
     # the face, turned a little to our right: the near cheek and the ear on the left, the far cheek in shade on the right
     jaw = 0 if fem else 2
     face = [(36, 50), (44, 36), (62, 28), (82, 32), (92, 44), (94, 58), (93 + jaw, 70), (90 + jaw, 84), (84 + jaw, 95), (74, 102), (66, 104), (56, 100), (44 - jaw, 92), (36 - jaw, 82), (34, 68)]
-    cv.poly(face, skin)
-    cv.poly([(88, 56), (94, 58), (93 + jaw, 70), (90 + jaw, 84), (84 + jaw, 95), (76, 100), (86, 84), (88, 70)], skin_d)
+    cv.poly(face, skin, form=((10, 5), (2, 1.5)))
     cv.oline(face, 2.2)
     # Keep the dialogue cast distinct, while giving every face Bolormaa's warm, softly lit finish.
     rose = tuple(round(skin[i] * 0.84 + rgb('#dc766b')[i] * 0.16) for i in range(3))
@@ -189,7 +233,7 @@ def bust(c, expr='happy', talk=0, blink=False):
     mouth(cv, c, mk, talk)
     if expr == 'shy': cv.ell(48, 80, 5, 2.5, (236, 140, 120)); cv.ell(86, 78, 4, 2.5, (236, 140, 120))
     if c.get('mustache') or c.get('beard'):
-        if c.get('beard'): bd = [(46, 90), (92, 84), (86, 106), (70, 114), (52, 106)]; cv.poly(bd, hair); cv.oline(bd, 2.0); cv.line([(62, 98), (64, 110)], 1.4, hair_l)
+        if c.get('beard'): bd = [(46, 90), (92, 84), (86, 106), (70, 114), (52, 106)]; cv.poly(bd, hair, form=((3, 4), (1.5, 1.5))); cv.strands(bd, hair_lines(c['hair'][0], 48, 90, 86, 112, 10, 2), hair_d); cv.oline(bd, 2.0); cv.line([(62, 98), (64, 110)], 1.4, hair_l)
         mu = [(56, 87), (66, 83), (74, 83), (84, 85), (82, 89), (74, 87), (66, 87), (58, 91)]; cv.poly(mu, hair); cv.oline(mu, 1.6)
     if c.get('glasses'):
         cv.oell(51, 66, 12, 9.5, 2.2); cv.oell(83, 64, 9, 8.5, 2.2); cv.line([(63, 65), (74, 64)], 2.0); cv.line([(39, 66), (34, 70)], 2.0)
@@ -197,7 +241,10 @@ def bust(c, expr='happy', talk=0, blink=False):
     if fem:
         left = [(60, 6), (57, 20), (53, 33), (50, 44), (46, 37), (43, 48), (40, 43), (36, 56), (35, 72), (24, 76), (20, 52), (26, 28), (40, 12)]
         right = [(62, 6), (66, 18), (72, 30), (80, 38), (86, 47), (88, 41), (92, 50), (94, 56), (95, 74), (96, 96), (104, 96), (106, 58), (100, 28), (84, 10)]
-        for part in (left, right): cv.poly(part, hair)
+        for part in (left, right):
+            cv.poly(part, hair, form=((4, 3), (2, 2)))
+            cv.strands(part, hair_lines(c['hair'][0] + str(part[0]), min(p[0] for p in part), max(p[0] for p in part), 4, 100, 9), hair_d)
+            cv.strands(part, hair_lines(c['hair'][2] + str(part[0]), min(p[0] for p in part), max(p[0] for p in part), 4, 60, 4), hair_l, 0.5)
         cv.line(left[:9], 2.2); cv.line(right[:11], 2.2)
         for pts in ([(56, 8), (42, 20), (30, 40)], [(54, 16), (44, 30), (38, 48)], [(50, 6), (32, 14), (22, 34)], [(48, 26), (42, 42)],
                     [(64, 8), (80, 16), (94, 36)], [(66, 16), (78, 28), (88, 42)], [(72, 6), (90, 12), (102, 32)], [(98, 44), (100, 88)],
@@ -206,7 +253,9 @@ def bust(c, expr='happy', talk=0, blink=False):
         cv.line([(48, 10), (60, 6), (76, 8)], 1.4, hair_l)
     else:   # men: short hair under the hat, or a side part
         top = [(34, 56), (34, 30), (46, 14), (64, 8), (84, 14), (96, 32), (96, 58), (90, 44), (70, 36), (50, 36), (40, 46)]
-        cv.poly(top, hair); cv.oline(top, 2.2)
+        cv.poly(top, hair, form=((3, 3), (2, 2)))
+        cv.strands(top, hair_lines(c['hair'][0], 34, 96, 6, 56, 14), hair_d); cv.strands(top, hair_lines(c['hair'][2], 40, 90, 6, 34, 5), hair_l, 0.5)
+        cv.oline(top, 2.2)
         for pts in ([(42, 24), (54, 34)], [(62, 12), (66, 30)], [(76, 16), (86, 34)]): cv.line(pts, 1.6)
         cv.line([(50, 14), (70, 12), (90, 28)], 1.4, hair_l)
         cv.line([(40, 29), (44, 23), (50, 19)], 1.2, hair_d)
@@ -215,19 +264,20 @@ def bust(c, expr='happy', talk=0, blink=False):
         for x0, top, w in ((22, 84, 9), (98, 92, 7)):
             for y in range(top, 146, 9):
                 lobe = [(x0 - w, y), (x0, y - 2), (x0 + w, y + 2), (x0 + w, y + 8), (x0, y + 10), (x0 - w, y + 6)]
-                cv.poly(lobe, hair); cv.line([(x0 - w, y + 6), (x0, y + 10), (x0 + w, y + 8)], 2.0); cv.line([(x0 - w + 2, y + 2), (x0 + 1, y + 1)], 1.4, hair_l)
+                cv.poly(lobe, hair, form=((2.5, 2.5), (1.2, 1.2))); cv.line([(x0 - w, y + 6), (x0, y + 10), (x0 + w, y + 8)], 2.0); cv.line([(x0 - w + 2, y + 2), (x0 + 1, y + 1)], 1.4, hair_l)
             cv.line([(x0 - w, top), (x0 - w, 144)], 2.0); cv.line([(x0 + w, top + 2), (x0 + w, 144)], 2.0)
     # hats
     if hat == 'mongol':
-        cv.poly([(44, 22), (54, 4), (74, 4), (84, 22)], rgb('#d83a2a')); cv.poly([(60, 4), (68, 4), (66, 22), (62, 22)], rgb('#ff7050')); cv.oline([(44, 22), (54, 4), (74, 4), (84, 22)], 2.2)
-        cv.poly([(24, 34), (104, 34), (98, 18), (30, 18)], rgb('#3a2820')); cv.oline([(24, 34), (104, 34), (98, 18), (30, 18)], 2.2); cv.ell(64, 5, 3.4, 3.4, rgb('#ffcf3a')); cv.oell(64, 5, 3.4, 3.4, 1.4)
+        cv.poly([(44, 22), (54, 4), (74, 4), (84, 22)], rgb('#d83a2a'), form=((4, 3), (1.5, 1.5))); cv.poly([(60, 4), (68, 4), (66, 22), (62, 22)], rgb('#ff7050')); cv.oline([(44, 22), (54, 4), (74, 4), (84, 22)], 2.2)
+        cv.poly([(24, 34), (104, 34), (98, 18), (30, 18)], rgb('#3a2820'), form=((5, 4), (2, 2))); cv.oline([(24, 34), (104, 34), (98, 18), (30, 18)], 2.2); cv.ell(64, 5, 3.4, 3.4, rgb('#ffcf3a')); cv.oell(64, 5, 3.4, 3.4, 1.4)
     elif hat == 'loovuuz':
-        cv.poly([(42, 18), (64, 2), (86, 18)], rgb('#2f6fdb')); cv.oline([(42, 18), (64, 2), (86, 18)], 2.2)
-        fur = rgb('#8a5a33'); band = [(20, 36), (106, 36), (106, 16), (20, 16)]; cv.poly(band, fur); cv.oline(band, 2.2)
-        for x in (24, 102): fl = [(x - 6, 32), (x + 6, 32), (x + 6, 80), (x - 6, 80)]; cv.poly(fl, fur); cv.oline(fl, 2.0)
+        cv.poly([(42, 18), (64, 2), (86, 18)], rgb('#2f6fdb'), form=((4, 3), (1.5, 1.5))); cv.oline([(42, 18), (64, 2), (86, 18)], 2.2)
+        fur = rgb('#8a5a33'); band = [(20, 36), (106, 36), (106, 16), (20, 16)]; cv.poly(band, fur, form=((5, 5), (2, 2)))
+        cv.strands(band, [[(x, 15), (x + 1.5, 37)] for x in range(22, 106, 3)], tuple(round(v * 0.78) for v in fur), 0.6); cv.oline(band, 2.2)
+        for x in (24, 102): fl = [(x - 6, 32), (x + 6, 32), (x + 6, 80), (x - 6, 80)]; cv.poly(fl, fur, form=((3, 4), (1.5, 1.5))); cv.oline(fl, 2.0)
         cv.line([(24, 22), (102, 22)], 1.6, rgb('#c49a6a'))
     elif hat == 'cap':
-        cp = [(28, 38), (36, 12), (64, 4), (90, 12), (100, 38)]; cv.poly(cp, rgb('#3a5a8a')); cv.oline(cp, 2.2)
+        cp = [(28, 38), (36, 12), (64, 4), (90, 12), (100, 38)]; cv.poly(cp, rgb('#3a5a8a'), form=((5, 4), (2, 2))); cv.oline(cp, 2.2)
         br = [(64, 34), (110, 34), (108, 42), (64, 40)]; cv.poly(br, rgb('#2a3f66')); cv.oline(br, 2.0)
     elif hat == 'flower':
         hb = [(24, 24), (102, 24), (102, 30), (24, 30)]; cv.poly(hb, rgb('#ff6fa8')); cv.oline(hb, 1.8)
