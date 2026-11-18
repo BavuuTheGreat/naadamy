@@ -9,12 +9,21 @@ using UnityEngine.Networking;
 
 public static class Family
 {
+    /** The scheme for an address typed without one ("naadamy-server.onrender.com", "192.168.1.5:8080"): https, except a
+     *  server on this computer or the home Wi-Fi (node server.js speaks plain http) outside a web page. The hosted server
+     *  only answers https, and the iOS app may not call plain http on the internet at all (App Transport Security). */
+    public static string Scheme(string address)
+    {
 #if UNITY_WEBGL && !UNITY_EDITOR
-    public const string SCHEME = "https://"; // a web page served over https may only call https
+        return "https://"; // a web page served over https may only call https
 #else
-    public const string SCHEME = "http://";  // node server.js on the local Wi-Fi
+        string h = (address ?? "").Split('/', ':')[0].ToLowerInvariant();
+        bool local = h == "localhost" || h.EndsWith(".local") || h.StartsWith("127.") || h.StartsWith("192.168.") || h.StartsWith("10.")
+            || System.Text.RegularExpressions.Regex.IsMatch(h, @"^172\.(1[6-9]|2\d|3[01])\.");
+        return local ? "http://" : "https://";
 #endif
-    static string Url(string server) { string s = (server ?? "").Trim().TrimEnd('/'); if (s == "") return null; if (!s.StartsWith("http")) s = SCHEME + s; return s + "/api/family"; }
+    }
+    static string Url(string server) { string s = (server ?? "").Trim().TrimEnd('/'); if (s == "") return null; if (!s.StartsWith("http")) s = Scheme(s) + s; return s + "/api/family"; }
     static J Fail(string reason) => J.Parse("{\"ok\":false,\"reason\":" + J.Quote(reason) + "}");
     /** The grown-up PIN as typed at the parent gate or the PIN pad: in memory only, never saved (the device keeps its hash). */
     public static string pin = "";
